@@ -236,11 +236,12 @@ def render_labels_bulk(shipments):
     components.html(full_html, height=400, scrolling=True)
 
 # ----------------------- UI Helpers ----------------------- #
-@st.cache_data(ttl=3600, show_spinner=False)  # Cache 1 giờ, không hiện spinner
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=5)  # Cache 1 giờ, tối đa 5 ảnh
 def _get_drive_image_bytes(file_id):
     """
     Tải ảnh từ Drive một lần và cache lại
-    Chỉ tải khi chưa có trong cache, không làm nặng server
+    - Cache tối đa 5 ảnh, tự động xóa ảnh cũ nhất khi quá 5
+    - Chỉ tải khi chưa có trong cache, không làm nặng server
     """
     try:
         download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -1407,7 +1408,8 @@ def show_manage_shipments():
                 if not row.get('image_url'):
                     st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"[Xem ảnh]({row['image_url']})")
+                    # Hiển thị ảnh với lazy loading - chỉ tải khi người dùng mở expander
+                    display_drive_image(row['image_url'], width=200, caption="Ảnh phiếu", lazy_load=True)
 
                 edit_key = f'edit_shipment_{row["id"]}'
                 is_editing = st.session_state.get(edit_key, False)
