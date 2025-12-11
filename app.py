@@ -78,7 +78,7 @@ from database import (
     set_user_password, get_all_users, get_shipment_by_id,
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
-    update_transfer_slip, update_transfer_slip_shipments_status
+    update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data
 )
 from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin
@@ -1499,9 +1499,9 @@ def show_settings_screen():
         st.error("❌ Chỉ có quyền admin mới có thể truy cập trang này!")
         return
     
-    st.header("⚙️ Cài Đặt - Quản Lý Nhà Cung Cấp")
+    st.header("⚙️ Cài Đặt")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Danh Sách NCC", "➕ Thêm NCC Mới", "☁️ Google Sheets", "🔑 Tài Khoản", "🖨️ In tem"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Danh Sách NCC", "➕ Thêm NCC Mới", "☁️ Google Sheets", "🔑 Tài Khoản", "🖨️ In tem", "🗑️ Database"])
     
     with tab1:
         show_suppliers_list()
@@ -1517,6 +1517,9 @@ def show_settings_screen():
 
     with tab5:
         show_label_settings()
+    
+    with tab6:
+        show_database_management()
 
 
 def show_suppliers_list():
@@ -1671,6 +1674,76 @@ def show_user_management():
         use_container_width=True,
         hide_index=True
     )
+
+
+def show_database_management():
+    """Database management - chỉ admin mới có quyền"""
+    st.subheader("🗑️ Quản Lý Database")
+    
+    st.warning("⚠️ **CẢNH BÁO:** Chức năng này sẽ xóa TOÀN BỘ dữ liệu trong database!")
+    
+    # Hiển thị thống kê database hiện tại
+    st.markdown("### Thống kê Database hiện tại")
+    
+    try:
+        df_shipments = get_all_shipments()
+        df_transfers = get_all_transfer_slips()
+        df_suppliers = get_all_suppliers()
+        df_users = get_all_users()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Số phiếu gửi hàng", len(df_shipments))
+        with col2:
+            st.metric("Số phiếu chuyển", len(df_transfers))
+        with col3:
+            st.metric("Số nhà cung cấp", len(df_suppliers))
+        with col4:
+            st.metric("Số tài khoản", len(df_users))
+    except Exception as e:
+        st.error(f"Lỗi khi lấy thống kê: {str(e)}")
+    
+    st.divider()
+    
+    # Form xóa database
+    st.markdown("### Xóa toàn bộ dữ liệu")
+    
+    st.error("""
+    **⚠️ CẢNH BÁO NGHIÊM TRỌNG:**
+    - Hành động này sẽ xóa **TẤT CẢ** dữ liệu trong database
+    - Bao gồm: tất cả phiếu gửi hàng, phiếu chuyển, lịch sử thay đổi
+    - Dữ liệu đã xóa **KHÔNG THỂ KHÔI PHỤC**
+    - Chỉ giữ lại cấu trúc bảng và dữ liệu mặc định (users, suppliers)
+    """)
+    
+    # Xác nhận kép
+    confirm_text = st.text_input(
+        "Nhập 'XÓA TẤT CẢ' để xác nhận:",
+        key="confirm_delete_db",
+        help="Phải nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận"
+    )
+    
+    if confirm_text == "XÓA TẤT CẢ":
+        st.error("⚠️ Bạn đã xác nhận muốn xóa toàn bộ dữ liệu!")
+        
+        if st.button("🗑️ XÓA TOÀN BỘ DATABASE", type="primary", key="delete_db_btn"):
+            with st.spinner("Đang xóa dữ liệu..."):
+                result = clear_all_data()
+                
+                if result['success']:
+                    st.success("✅ Đã xóa toàn bộ dữ liệu thành công!")
+                    st.info("Database đã được khôi phục về trạng thái ban đầu với dữ liệu mặc định.")
+                    st.balloons()
+                    # Clear session state để reload
+                    for key in list(st.session_state.keys()):
+                        if key != 'username':  # Giữ lại thông tin đăng nhập
+                            del st.session_state[key]
+                    st.rerun()
+                else:
+                    st.error(f"❌ Lỗi khi xóa database: {result['error']}")
+    else:
+        if confirm_text:
+            st.warning("Vui lòng nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận")
 
 
 def show_google_sheets_settings():
