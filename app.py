@@ -915,7 +915,7 @@ def show_manage_shipments():
                         st.error(f"Lỗi: {res['error']}")
 
     with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
-        st.write("Upload file Excel với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AL=Ghi chú (Dung lượng).")
+        st.write("Upload file Excel (bỏ qua header, đọc từ hàng 2) với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AI=Ghi chú (Dung lượng).")
         suppliers_df = get_suppliers()
         supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
         bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
@@ -924,11 +924,13 @@ def show_manage_shipments():
             if st.button("Xử lý file", type="primary", key="bulk_process"):
                 try:
                     df = pd.read_excel(uploaded_file, header=None)
-                    # Column indices: B=1, Z=25, AF=31, AL=37 (0-based)
-                    needed_cols = {1: 'qr_code', 25: 'device_name', 31: 'imei', 37: 'capacity'}
+                    # Column indices: B=1, Z=25, AF=31, AI=34 (0-based). Bỏ dòng 0 (header)
+                    if df.shape[0] > 0:
+                        df = df.iloc[1:]
+                    needed_cols = {1: 'qr_code', 25: 'device_name', 31: 'imei', 34: 'capacity'}
                     missing_cols = [c for c in needed_cols if c >= df.shape[1]]
                     if missing_cols:
-                        st.error("File không đủ cột cần thiết (B,Z,AF,AL).")
+                        st.error("File không đủ cột cần thiết (B,Z,AF,AI).")
                     else:
                         df = df[list(needed_cols.keys())]
                         df.rename(columns=needed_cols, inplace=True)
