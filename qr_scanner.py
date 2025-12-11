@@ -45,6 +45,19 @@ def decode_qr_from_image(image):
         else:
             image_array = image
         
+        # Optional: upscale image to help weak/blurred captures
+        if len(image_array.shape) >= 2:
+            try:
+                h, w = image_array.shape[:2]
+                scale = 2  # upscale 2x
+                if h > 0 and w > 0:
+                    if len(image_array.shape) == 3:
+                        image_array = cv2.resize(image_array, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+                    else:
+                        image_array = cv2.resize(image_array, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+            except Exception:
+                pass
+
         # Method 1: Try OpenCV QRCodeDetector first (best for Windows, no DLL needed)
         if CV2_AVAILABLE:
             try:
@@ -138,10 +151,10 @@ def decode_resized_opencv(image_array):
     try:
         if len(image_array.shape) == 3:
             height, width = image_array.shape[:2]
-            resized = cv2.resize(image_array, (width * 2, height * 2), interpolation=cv2.INTER_CUBIC)
+            resized = cv2.resize(image_array, (width * 3, height * 3), interpolation=cv2.INTER_CUBIC)
         else:
             height, width = image_array.shape
-            resized = cv2.resize(image_array, (width * 2, height * 2), interpolation=cv2.INTER_CUBIC)
+            resized = cv2.resize(image_array, (width * 3, height * 3), interpolation=cv2.INTER_CUBIC)
         
         detector = cv2.QRCodeDetector()
         data, bbox, rectified = detector.detectAndDecode(resized)
