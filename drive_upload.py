@@ -61,11 +61,28 @@ def upload_file_to_drive(file_bytes: bytes, filename: str, mime_type: str):
             )
             .execute()
         )
+
+        file_id = file.get("id")
+
+        # Make file publicly readable (anyone with link)
+        try:
+            service.permissions().create(
+                fileId=file_id,
+                body={"role": "reader", "type": "anyone"},
+                fields="id",
+                supportsAllDrives=True,
+            ).execute()
+        except Exception as e:
+            print(f"Warning: cannot set public permission: {e}")
+
+        # Direct download link (Telegram can fetch to show inline)
+        direct_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+
         return {
             "success": True,
             "error": None,
-            "url": file.get("webViewLink"),
-            "id": file.get("id"),
+            "url": direct_link,
+            "id": file_id,
         }
     except Exception as e:
         return {"success": False, "error": str(e), "url": None}
