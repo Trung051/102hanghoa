@@ -1225,29 +1225,8 @@ def show_manage_shipments():
     if search_qr:
         filtered_df = filtered_df[filtered_df['qr_code'].str.contains(search_qr, case=False, na=False)]
     
-    # Push to Google Sheets button
-    col_push1, col_push2 = st.columns([3, 1])
-    with col_push1:
-        st.write("")  # Spacing
-    with col_push2:
-        if st.button("☁️ Push lên Google Sheets", type="primary", key="push_to_sheets_manage"):
-            with st.spinner("Đang push dữ liệu lên Google Sheets..."):
-                result = push_shipments_to_sheets(filtered_df, append_mode=True)
-                if result['success']:
-                    st.success(f"✅ {result['message']}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ {result['message']}")
-    
     # Display shipments
     st.subheader(f"Tổng số: {len(filtered_df)} phiếu")
-    st.caption("Tip: Bấm 'In tem' để in toàn bộ danh sách đang lọc (tối ưu khi đã lọc hẹp).")
-
-    if not filtered_df.empty:
-        if st.button("🖨️ In tem danh sách đang lọc", key="bulk_print_all_btn"):
-            selected_shipments = filtered_df.to_dict(orient='records')
-            st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
-            render_labels_bulk(selected_shipments)
     
     for idx, row in filtered_df.iterrows():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
