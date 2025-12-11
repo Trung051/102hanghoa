@@ -59,7 +59,15 @@ def init_database():
         if "store_name" not in cols:
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN store_name TEXT")
         if "last_updated" not in cols:
-            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            # SQLite doesn't support DEFAULT CURRENT_TIMESTAMP in ALTER TABLE
+            # So we add the column first, then update existing rows
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN last_updated TIMESTAMP")
+            # Update existing rows with sent_time or current timestamp
+            cursor.execute("""
+                UPDATE ShipmentDetails 
+                SET last_updated = COALESCE(sent_time, CURRENT_TIMESTAMP)
+                WHERE last_updated IS NULL
+            """)
         
         # Create Suppliers table
         cursor.execute('''
