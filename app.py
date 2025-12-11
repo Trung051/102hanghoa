@@ -80,7 +80,7 @@ from database import (
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
     update_transfer_slip, update_transfer_slip_shipments_status
 )
-from qr_scanner import decode_qr_from_image, parse_qr_code
+from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin
 from config import STATUS_VALUES
 from google_sheets import push_shipments_to_sheets, test_connection
@@ -417,10 +417,8 @@ def scan_qr_screen():
         return
     # If we have scanned QR code but no shipment found, show create form
     if scanned_qr_code and not found_shipment:
-        scanned_data = st.session_state.get('scanned_qr_data', {})
-        if scanned_data:
-            show_create_shipment_form(current_user, scanned_data)
-            return
+        show_create_shipment_form(current_user, scanned_qr_code)
+        return
     
     # Main layout
     st.subheader("Quét QR Code")
@@ -474,14 +472,12 @@ def scan_qr_screen():
                         pass
             
             if qr_text:
-                # Parse QR code
-                parsed_data = parse_qr_code(qr_text)
+                # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
+                qr_code = qr_text.strip()
                 
-                if parsed_data:
-                    qr_code = parsed_data.get('qr_code', '').strip()
-                    
+                if qr_code:
                     # Check if shipment already exists
-                    existing_shipment = get_shipment_by_qr_code(qr_code) if qr_code else None
+                    existing_shipment = get_shipment_by_qr_code(qr_code)
                     
                     if existing_shipment:
                         # Shipment exists - show info
@@ -492,7 +488,6 @@ def scan_qr_screen():
                     else:
                         # New shipment - show create form
                         st.success("✅ Đã nhận diện QR code! Đang chuyển sang form tạo phiếu...")
-                        st.session_state['scanned_qr_data'] = parsed_data
                         st.session_state['scanned_qr_code'] = qr_code
                         st.session_state['show_camera'] = False
                         st.rerun()
@@ -624,19 +619,19 @@ def show_shipment_info(current_user, shipment):
                 st.warning("⚠️ Vui lòng chọn trạng thái khác với trạng thái hiện tại!")
 
 
-def show_create_shipment_form(current_user, scanned_data):
-    """Show form to create shipment from scanned QR data"""
+def show_create_shipment_form(current_user, qr_code):
+    """Show form to create shipment from scanned QR code"""
     st.subheader("📝 Tạo Phiếu Gửi Hàng")
     
     # Initialize form data in session state if not exists
     if 'form_qr_code' not in st.session_state:
-        st.session_state['form_qr_code'] = scanned_data.get('qr_code', '')
+        st.session_state['form_qr_code'] = qr_code
     if 'form_imei' not in st.session_state:
-        st.session_state['form_imei'] = scanned_data.get('imei', '')
+        st.session_state['form_imei'] = ''
     if 'form_device_name' not in st.session_state:
-        st.session_state['form_device_name'] = scanned_data.get('device_name', '')
+        st.session_state['form_device_name'] = ''
     if 'form_capacity' not in st.session_state:
-        st.session_state['form_capacity'] = scanned_data.get('capacity', '')
+        st.session_state['form_capacity'] = ''
     
     col1, col2 = st.columns([2, 1])
     
@@ -694,12 +689,10 @@ def show_create_shipment_form(current_user, scanned_data):
         # Button to scan again
         if st.button("🔄 Quét lại QR code", key="rescan_btn"):
             # Clear form data
-            for key in ['form_qr_code', 'form_imei', 'form_device_name', 'form_capacity']:
+            for key in ['form_qr_code', 'form_imei', 'form_device_name', 'form_capacity', 'scanned_qr_code']:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.session_state['scanned_qr_data'] = None
-            st.session_state['qr_scanned_success'] = False
-            st.session_state['show_camera_send'] = True
+            st.session_state['show_camera'] = True
             st.rerun()
     
     with col2:
@@ -768,7 +761,7 @@ def show_create_shipment_form(current_user, scanned_data):
                     if supplier and STATUS_VALUES and STATUS_VALUES[0] == 'Đã nhận':
                         notify_shipment_if_received(result['id'], force=True)
                     # Clear scanned data and form data
-                    for key in ['scanned_qr_data', 'scanned_qr_code', 'show_camera', 
+                    for key in ['scanned_qr_code', 'show_camera', 
                                'form_qr_code', 'form_imei', 'form_device_name', 'form_capacity', 'found_shipment']:
                         if key in st.session_state:
                             del st.session_state[key]
@@ -828,40 +821,28 @@ def receive_shipment_screen():
                 qr_text = decode_qr_from_image(image)
             
             if qr_text:
-                # Parse QR code to get qr_code
-                parsed_data = parse_qr_code(qr_text)
+                # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
+                qr_code = qr_text.strip()
                 
-                if parsed_data:
-                    qr_code = parsed_data['qr_code']
+                if qr_code:
+                    # Find shipment in database
+                    shipment_data = get_shipment_by_qr_code(qr_code)
                     
-                    # If qr_code is empty, try to use first part of the string
-                    if not qr_code.strip() and qr_text:
-                        # Try to use first value before comma as qr_code
-                        qr_code = qr_text.split(',')[0].strip()
-                    
-                    if qr_code.strip():
-                        # Find shipment in database
-                        shipment_data = get_shipment_by_qr_code(qr_code)
+                    if shipment_data:
+                        # Successfully found
+                        st.success("Tìm thấy phiếu! Đang chuyển sang tab cập nhật...")
                         
-                        if shipment_data:
-                            # Successfully found
-                            st.success("Tìm thấy phiếu! Đang chuyển sang tab cập nhật...")
-                            
-                            # Store in session state
-                            st.session_state['found_shipment'] = shipment_data
-                            st.session_state['shipment_found'] = True
-                            st.session_state['show_camera_receive'] = False
-                            
-                            # Auto switch to update form
-                            st.rerun()
-                        else:
-                            st.error(f"Không tìm thấy phiếu với mã QR: `{qr_code}`")
-                            st.info("Vui lòng kiểm tra lại mã QR hoặc thử lại.")
-                            st.info("Click 'Dừng quét' để quay lại.")
+                        # Store in session state
+                        st.session_state['found_shipment'] = shipment_data
+                        st.session_state['shipment_found'] = True
+                        st.session_state['show_camera_receive'] = False
+                        
+                        # Auto switch to update form
+                        st.rerun()
                     else:
-                        st.warning("⚠️ Không thể xác định mã QR từ dữ liệu quét được.")
-                        st.info(f"Dữ liệu nhận được: `{qr_text}`")
-                        st.info("Vui lòng thử lại hoặc click 'Dừng quét' để quay lại.")
+                        st.error(f"Không tìm thấy phiếu với mã QR: `{qr_code}`")
+                        st.info("Vui lòng kiểm tra lại mã QR hoặc thử lại.")
+                        st.info("Click 'Dừng quét' để quay lại.")
             else:
                 st.warning("⚠️ Không phát hiện QR code trong ảnh. Vui lòng thử lại.")
                 st.info("**Mẹo để quét thành công:**")
@@ -1815,25 +1796,22 @@ def show_transfer_slip_scan(current_user):
                         qr_text = decode_qr_from_image(image)
                         
                         if qr_text:
-                            parsed_data = parse_qr_code(qr_text)
-                            if parsed_data:
-                                qr_code = parsed_data['qr_code']
-                                if not qr_code.strip() and qr_text:
-                                    qr_code = qr_text.split(',')[0].strip()
-                                
-                                if qr_code.strip():
-                                    # Find shipment
-                                    shipment = get_shipment_by_qr_code(qr_code)
-                                    if shipment:
-                                        # Add to transfer slip
-                                        result = add_shipment_to_transfer_slip(transfer_slip_id, shipment['id'])
-                                        if result['success']:
-                                            st.success(f"Đã thêm máy {qr_code} vào phiếu chuyển")
-                                            st.rerun()
-                                        else:
-                                            st.error(f"Lỗi: {result['error']}")
+                            # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
+                            qr_code = qr_text.strip()
+                            
+                            if qr_code:
+                                # Find shipment
+                                shipment = get_shipment_by_qr_code(qr_code)
+                                if shipment:
+                                    # Add to transfer slip
+                                    result = add_shipment_to_transfer_slip(transfer_slip_id, shipment['id'])
+                                    if result['success']:
+                                        st.success(f"Đã thêm máy {qr_code} vào phiếu chuyển")
+                                        st.rerun()
                                     else:
-                                        st.warning(f"Không tìm thấy phiếu với mã QR: {qr_code}")
+                                        st.error(f"Lỗi: {result['error']}")
+                                else:
+                                    st.warning(f"Không tìm thấy phiếu với mã QR: {qr_code}")
                     except Exception as e:
                         st.error(f"Lỗi: {str(e)}")
     
