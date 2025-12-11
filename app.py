@@ -236,30 +236,10 @@ def render_labels_bulk(shipments):
     components.html(full_html, height=400, scrolling=True)
 
 # ----------------------- UI Helpers ----------------------- #
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def _load_drive_image(file_id, max_size=(800, 800)):
+def display_drive_image(image_url, width=300, caption=""):
     """
-    Load and cache image from Google Drive by file ID
-    Returns PIL Image or None
-    """
-    try:
-        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        response = requests.get(download_url, timeout=10)
-        if response.status_code == 200:
-            img = Image.open(BytesIO(response.content))
-            # Resize if too large to reduce memory usage
-            if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
-                img.thumbnail(max_size, Image.Resampling.LANCZOS)
-            return img
-    except Exception as e:
-        print(f"Error loading image {file_id}: {e}")
-    return None
-
-
-def display_drive_image(image_url, width=300, caption="", use_expander=False):
-    """
-    Download and display image from Google Drive URL with caching
-    use_expander: If True, show image in expander (lazy load)
+    Display image from Google Drive - browser tự tải trực tiếp từ Drive (không qua server)
+    Không làm nặng server vì browser tự tải từ Google Drive
     """
     try:
         # Extract file ID from URL
@@ -270,38 +250,22 @@ def display_drive_image(image_url, width=300, caption="", use_expander=False):
             file_id = image_url.split('id=')[-1].split('&')[0]
         
         if file_id:
-            # Use cached image loader
-            if use_expander:
-                with st.expander("📷 Xem ảnh", expanded=False):
-                    img = _load_drive_image(file_id)
-                    if img:
-                        st.image(img, width=width, caption=caption)
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-                    else:
-                        st.warning("Không thể tải ảnh từ Drive")
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-            else:
-                # Show loading spinner
-                with st.spinner("Đang tải ảnh..."):
-                    img = _load_drive_image(file_id)
-                    if img:
-                        st.image(img, width=width, caption=caption)
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-                    else:
-                        st.warning("Không thể tải ảnh từ Drive")
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            # Use Google Drive view link - browser sẽ tự tải trực tiếp từ Drive
+            # Không tải về server, không làm nặng web
+            view_link = f"https://drive.google.com/uc?id={file_id}"
+            
+            # Hiển thị bằng HTML để browser tự tải
+            if caption:
+                st.markdown(f"**{caption}**")
+            
+            st.markdown(
+                f'<img src="{view_link}" width="{width}" style="border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />',
+                unsafe_allow_html=True
+            )
+            st.markdown(f"[Mở ảnh trên Drive]({image_url})")
             return True
         else:
-            # Try direct URL (no caching for non-Drive URLs)
-            try:
-                response = requests.get(image_url, timeout=10)
-                if response.status_code == 200:
-                    img = Image.open(BytesIO(response.content))
-                    st.image(img, width=width, caption=caption)
-                    return True
-            except:
-                pass
-            
+            # Fallback: try direct URL
             st.image(image_url, width=width, caption=caption)
             return True
     except Exception as e:
