@@ -315,7 +315,7 @@ def inject_sidebar_styles():
 
 
 def inject_main_styles():
-    """Apply global spacing tweaks for better mobile experience."""
+    """Apply global spacing tweaks for better mobile experience and dashboard styling."""
     st.markdown(
         """
         <style>
@@ -327,6 +327,75 @@ def inject_main_styles():
                 padding-left: 0.9rem;
                 padding-right: 0.9rem;
             }
+        }
+        
+        /* Dashboard metric cards styling */
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .metric-card-blue {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .metric-card-green {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        .metric-card-orange {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .metric-card-purple {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .metric-card-yellow {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        .metric-card-red {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        }
+        .metric-label {
+            font-size: 0.875rem;
+            opacity: 0.9;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        
+        /* Dashboard header */
+        .dashboard-header {
+            margin-bottom: 2rem;
+        }
+        .dashboard-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 0.5rem;
+        }
+        .dashboard-subtitle {
+            font-size: 1rem;
+            color: #6b7280;
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Quick actions */
+        .quick-action-btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
         }
         </style>
         """,
@@ -890,17 +959,31 @@ def show_update_shipment_form(current_user, found_shipment):
 
 
 def show_dashboard():
-    """Show dashboard with statistics and shipment list"""
-    st.header("Dashboard Quản Lý")
+    """Show professional dashboard with statistics and quick actions"""
+    # Header
+    st.markdown('<div class="dashboard-header">', unsafe_allow_html=True)
+    st.markdown('<div class="dashboard-title">📊 Dashboard Quản Lý</div>', unsafe_allow_html=True)
+    st.markdown('<div class="dashboard-subtitle">Tổng quan hệ thống quản lý giao nhận hàng hóa</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Get all shipments
     df = get_all_shipments()
     
     if df.empty:
-        st.info("Chưa có dữ liệu phiếu gửi hàng")
+        st.info("📭 Chưa có dữ liệu phiếu gửi hàng. Bắt đầu bằng cách quét QR code hoặc tạo phiếu mới.")
+        # Quick action buttons
+        col_qa1, col_qa2 = st.columns(2)
+        with col_qa1:
+            if st.button("📷 Quét QR Code", type="primary", use_container_width=True, key="qa_scan"):
+                st.session_state['nav'] = "Quét QR"
+                st.rerun()
+        with col_qa2:
+            if st.button("➕ Tạo Phiếu Mới", use_container_width=True, key="qa_create"):
+                st.session_state['nav'] = "Quản Lý Phiếu"
+                st.rerun()
         return
     
-    # Calculate metrics (bao gồm trạng thái mới)
+    # Calculate metrics
     total = len(df)
     pending = len(df[df['status'] == 'Phiếu tạm'])
     sending = len(df[df['status'] == 'Đang gửi'])
@@ -908,34 +991,142 @@ def show_dashboard():
     transfer = len(df[df['status'] == 'Chuyển kho'])
     error = len(df[df['status'].isin(['Hư hỏng', 'Mất'])])
     
-    # Compact layout
+    # Calculate percentages
+    received_pct = (received / total * 100) if total > 0 else 0
+    sending_pct = (sending / total * 100) if total > 0 else 0
+    
+    # Professional metric cards with gradients
+    st.markdown("### 📈 Thống Kê Tổng Quan")
+    
+    # Row 1: Main metrics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Tổng Phiếu", total)
+        st.markdown(f"""
+        <div class="metric-card metric-card-blue">
+            <div class="metric-label">Tổng Phiếu</div>
+            <div class="metric-value">{total}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col2:
-        st.metric("Phiếu tạm", pending)
+        st.markdown(f"""
+        <div class="metric-card metric-card-green">
+            <div class="metric-label">Đã Nhận</div>
+            <div class="metric-value">{received}</div>
+            <div style="font-size:0.75rem; opacity:0.8; margin-top:0.25rem;">{received_pct:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col3:
-        st.metric("Chuyển kho", transfer)
-    col4, col5 = st.columns(2)
+        st.markdown(f"""
+        <div class="metric-card metric-card-orange">
+            <div class="metric-label">Đang Gửi</div>
+            <div class="metric-value">{sending}</div>
+            <div style="font-size:0.75rem; opacity:0.8; margin-top:0.25rem;">{sending_pct:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Row 2: Secondary metrics
+    col4, col5, col6 = st.columns(3)
     with col4:
-        st.metric("Đang Gửi", sending)
+        st.markdown(f"""
+        <div class="metric-card metric-card-purple">
+            <div class="metric-label">Phiếu Tạm</div>
+            <div class="metric-value">{pending}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col5:
-        st.metric("Đã Nhận", received)
+        st.markdown(f"""
+        <div class="metric-card metric-card-yellow">
+            <div class="metric-label">Chuyển Kho</div>
+            <div class="metric-value">{transfer}</div>
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.divider()
+    with col6:
+        st.markdown(f"""
+        <div class="metric-card metric-card-red">
+            <div class="metric-label">Lỗi/Hư Hỏng</div>
+            <div class="metric-value">{error}</div>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Filters (ẩn trong expander để gọn)
-    filter_status = STATUS_VALUES
-    filter_supplier = df['supplier'].unique().tolist()
-    date_range = None
-    with st.expander("Lọc dữ liệu (ẩn/hiện)", expanded=False):
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Quick Actions
+    st.markdown("### ⚡ Thao Tác Nhanh")
+    col_qa1, col_qa2, col_qa3 = st.columns(3)
+    with col_qa1:
+        if st.button("📷 Quét QR Code", type="primary", use_container_width=True, key="qa_scan_dash"):
+            st.session_state['nav'] = "Quét QR"
+            st.rerun()
+    with col_qa2:
+        if st.button("🖨️ In Tem QR", use_container_width=True, key="qa_print_dash"):
+            st.session_state['nav'] = "Quản Lý Phiếu"
+            st.rerun()
+    with col_qa3:
+        if st.button("📋 Xem Tất Cả", use_container_width=True, key="qa_view_all"):
+            st.session_state['nav'] = "Quản Lý Phiếu"
+            st.rerun()
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Recent shipments preview
+    st.markdown("### 📦 Phiếu Gần Đây")
+    
+    # Get recent shipments (last 10)
+    recent_df = df.nlargest(10, 'sent_time') if 'sent_time' in df.columns else df.head(10)
+    
+    if not recent_df.empty:
+        # Display as cards
+        cols_per_row = 3
+        for idx in range(0, len(recent_df), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for i, col in enumerate(cols):
+                if idx + i < len(recent_df):
+                    row = recent_df.iloc[idx + i]
+                    with col:
+                        status_colors = {
+                            'Đã nhận': '#10b981',
+                            'Đang gửi': '#f59e0b',
+                            'Phiếu tạm': '#6366f1',
+                            'Chuyển kho': '#8b5cf6',
+                            'Hư hỏng': '#ef4444',
+                            'Mất': '#ef4444'
+                        }
+                        status_color = status_colors.get(row['status'], '#6b7280')
+                        st.markdown(f"""
+                        <div style="
+                            background: white;
+                            border-left: 4px solid {status_color};
+                            padding: 1rem;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                            margin-bottom: 1rem;
+                        ">
+                            <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">
+                                {row['qr_code']}
+                            </div>
+                            <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">
+                                {row['device_name']}
+                            </div>
+                            <div style="font-size: 0.75rem; color: {status_color}; font-weight: 500;">
+                                {row['status']}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+    
+    # Filters (collapsed)
+    with st.expander("🔍 Lọc Dữ Liệu", expanded=False):
         col1, col2, col3 = st.columns(3)
         
         with col1:
             filter_status = st.multiselect(
                 "Trạng thái:",
                 STATUS_VALUES,
-                default=STATUS_VALUES
+                default=STATUS_VALUES,
+                key="dash_filter_status"
             )
         
         with col2:
@@ -943,10 +1134,12 @@ def show_dashboard():
             filter_supplier = st.multiselect(
                 "Nhà cung cấp:",
                 suppliers_list,
-                default=suppliers_list
+                default=suppliers_list,
+                key="dash_filter_supplier"
             )
         
         with col3:
+            date_range = None
             if 'sent_time' in df.columns:
                 try:
                     df['sent_time'] = pd.to_datetime(df['sent_time'])
@@ -957,7 +1150,8 @@ def show_dashboard():
                         "Khoảng thời gian:",
                         value=(min_date, max_date),
                         min_value=min_date,
-                        max_value=max_date
+                        max_value=max_date,
+                        key="dash_date_range"
                     )
                 except:
                     date_range = None
@@ -979,37 +1173,36 @@ def show_dashboard():
         except:
             pass
     
-    # Display filtered data
-    st.subheader("Danh Sách Phiếu")
-    st.dataframe(
-        filtered_df,
-        use_container_width=True,
-        height=420,
-        hide_index=True
-    )
-    
-    # Export and Google Sheets buttons
-    col_export1, col_export2 = st.columns(2)
-    
-    with col_export1:
-        csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="Tải Excel (CSV)",
-            data=csv,
-            file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
+    # Full list (collapsed)
+    with st.expander(f"📋 Danh Sách Đầy Đủ ({len(filtered_df)} phiếu)", expanded=False):
+        st.dataframe(
+            filtered_df,
+            use_container_width=True,
+            height=400,
+            hide_index=True
         )
-    
-    with col_export2:
-        st.write("")  # Spacing
-        if st.button("☁️ Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard"):
-            with st.spinner("Đang push dữ liệu lên Google Sheets..."):
-                result = push_shipments_to_sheets(filtered_df, append_mode=True)
-                if result['success']:
-                    st.success(f"✅ {result['message']}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ {result['message']}")
+        
+        # Export buttons
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Tải Excel (CSV)",
+                data=csv,
+                file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col_exp2:
+            if st.button("☁️ Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
+                with st.spinner("Đang push dữ liệu lên Google Sheets..."):
+                    result = push_shipments_to_sheets(filtered_df, append_mode=True)
+                    if result['success']:
+                        st.success(f"✅ {result['message']}")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ {result['message']}")
 
 
 def show_audit_log():
@@ -1686,14 +1879,15 @@ if st.sidebar.button("Đăng xuất", key="logout_btn"):
     logout()
     st.rerun()
 
-# Navigation - only show Settings for admin
-nav_options = ["Quét QR", "Quản Lý Phiếu", "Dashboard", "Lịch Sử"]
+# Navigation - Dashboard is homepage, only show Settings for admin
+nav_options = ["Dashboard", "Quét QR", "Quản Lý Phiếu", "Lịch Sử"]
 if is_admin():
     nav_options.append("Cài Đặt")
 
 # Box-style navigation buttons (no dropdown, no radio)
+# Dashboard is the default homepage
 if 'nav' not in st.session_state:
-    st.session_state['nav'] = nav_options[0]
+    st.session_state['nav'] = "Dashboard"
 
 st.sidebar.markdown("**Chọn chức năng:**")
 for opt in nav_options:
@@ -1710,15 +1904,15 @@ for opt in nav_options:
 
 selected = st.session_state['nav']
 
-# Main content area
-if selected == "Quét QR":
+# Main content area - Dashboard is homepage
+if selected == "Dashboard":
+    show_dashboard()
+
+elif selected == "Quét QR":
     scan_qr_screen()
 
 elif selected == "Quản Lý Phiếu":
     show_manage_shipments()
-
-elif selected == "Dashboard":
-    show_dashboard()
 
 elif selected == "Lịch Sử":
     show_audit_log()
