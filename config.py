@@ -28,7 +28,7 @@ USERS = {
 }
 
 # Shipment status values
-STATUS_VALUES = ['Đang gửi', 'Đã nhận', 'Hư hỏng', 'Mất']
+STATUS_VALUES = ['Phiếu tạm', 'Đang gửi', 'Đã nhận', 'Hư hỏng', 'Mất']
 
 # Default status for new shipments
 DEFAULT_STATUS = 'Đang gửi'
