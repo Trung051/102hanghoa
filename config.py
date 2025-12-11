@@ -69,6 +69,9 @@ try:
 except Exception:
     TELEGRAM_CHAT_ID = -1003093937806
 
-# Drive folder (optional override from secrets/env)
-DRIVE_FOLDER_ID = get_secret('DRIVE_FOLDER_ID', None)
+# Drive folder for normal shipments (phiếu bình thường)
+DRIVE_FOLDER_ID = get_secret('DRIVE_FOLDER_ID', '1xP9msTCgN2sFvJCW2zjSQU-yEeQdS0yV')
+
+# Drive folder for transfer slips (phiếu chuyển)
+DRIVE_TRANSFER_FOLDER_ID = get_secret('DRIVE_TRANSFER_FOLDER_ID', '1uEp4nwk1Ld85eug1rx27fkFtcjuWz3Zw')
 
