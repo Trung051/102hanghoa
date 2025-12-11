@@ -122,7 +122,7 @@ def init_database():
         conn.close()
 
 
-def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None):
+def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None):
     """
     Save new shipment to database
     
@@ -144,9 +144,20 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
     try:
         cursor.execute('''
         INSERT INTO ShipmentDetails 
-        (qr_code, imei, device_name, capacity, supplier, created_by, notes, image_url, telegram_message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (qr_code, imei, device_name, capacity, supplier, created_by, notes, image_url, None))
+        (qr_code, imei, device_name, capacity, supplier, status, created_by, notes, image_url, telegram_message_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            qr_code,
+            imei,
+            device_name,
+            capacity,
+            supplier,
+            status if status else DEFAULT_STATUS,
+            created_by,
+            notes,
+            image_url,
+            None
+        ))
         
         conn.commit()
         shipment_id = cursor.lastrowid
