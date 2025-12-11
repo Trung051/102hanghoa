@@ -1774,10 +1774,15 @@ def show_user_management():
     st.subheader("🔑 Quản Lý Tài Khoản")
 
     with st.form("user_form"):
-        username = st.text_input("Tên đăng nhập *", help="Ví dụ: admin, user, staff")
+        username = st.text_input("Tên đăng nhập *", help="Ví dụ: admin, user, staff, cuahang1")
         password = st.text_input("Mật khẩu mới *", type="password")
         confirm = st.text_input("Nhập lại mật khẩu *", type="password")
-        is_admin_flag = st.checkbox("Cấp quyền admin", value=False)
+        
+        col_check1, col_check2 = st.columns(2)
+        with col_check1:
+            is_admin_flag = st.checkbox("Cấp quyền admin", value=False)
+        with col_check2:
+            is_store_flag = st.checkbox("Cấp quyền cửa hàng", value=False, help="Tài khoản này sẽ có quyền cửa hàng")
 
         submitted = st.form_submit_button("💾 Lưu tài khoản", type="primary")
         if submitted:
@@ -1788,9 +1793,11 @@ def show_user_management():
             elif password != confirm:
                 st.error("❌ Mật khẩu nhập lại không khớp")
             else:
-                result = set_user_password(username.strip(), password, is_admin_flag)
+                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag)
                 if result['success']:
-                    st.success("✅ Đã lưu tài khoản thành công")
+                    store_msg = " (Cửa hàng)" if is_store_flag else ""
+                    admin_msg = " (Admin)" if is_admin_flag else ""
+                    st.success(f"✅ Đã lưu tài khoản thành công{admin_msg}{store_msg}")
                 else:
                     st.error(f"❌ {result['error']}")
 
@@ -1805,6 +1812,12 @@ def show_user_management():
     users_df = users_df.copy()
     users_df['password'] = users_df['password'].apply(lambda x: '******' if x else '')
     users_df['is_admin'] = users_df['is_admin'].apply(lambda x: "Admin" if x else "User")
+    
+    # Format is_store column
+    if 'is_store' in users_df.columns:
+        users_df['is_store'] = users_df['is_store'].apply(lambda x: "Cửa hàng" if x else "Không")
+    else:
+        users_df['is_store'] = "Không"
 
     st.dataframe(
         users_df,
