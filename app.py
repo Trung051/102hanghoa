@@ -893,6 +893,81 @@ def show_manage_shipments():
     st.header("📋 Quản Lý Phiếu Gửi Hàng")
     current_user = get_current_user()
     
+    # Quick actions
+    with st.expander("➕ Tạo phiếu (nhập tay)", expanded=False):
+        st.write("Chuyển sang tab 'Quét QR' để tạo phiếu từ QR, hoặc dùng form dưới đây.")
+        with st.form("manual_create_form"):
+            qr = st.text_input("Mã QR Code *")
+            imei = st.text_input("IMEI *")
+            device_name = st.text_input("Tên thiết bị *")
+            capacity = st.text_input("Dung lượng *")
+            suppliers_df = get_suppliers()
+            supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
+            notes = st.text_area("Ghi chú")
+            if st.form_submit_button("💾 Lưu phiếu mới", type="primary"):
+                if not qr or not imei or not device_name or not capacity:
+                    st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
+                else:
+                    res = save_shipment(qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), supplier, current_user, notes if notes else None)
+                    if res['success']:
+                        st.success(f"Đã tạo phiếu #{res['id']}")
+                    else:
+                        st.error(f"Lỗi: {res['error']}")
+
+    with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
+        st.write("Upload file Excel với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AL=Ghi chú (Dung lượng).")
+        suppliers_df = get_suppliers()
+        bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", suppliers_df['name'].tolist() if not suppliers_df.empty else [], key="bulk_supplier")
+        uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx", "xls"], key="bulk_excel")
+        if uploaded_file is not None:
+            if st.button("Xử lý file", type="primary", key="bulk_process"):
+                try:
+                    df = pd.read_excel(uploaded_file, header=None)
+                    # Column indices: B=1, Z=25, AF=31, AL=37 (0-based)
+                    needed_cols = {1: 'qr_code', 25: 'device_name', 31: 'imei', 37: 'capacity'}
+                    missing_cols = [c for c in needed_cols if c >= df.shape[1]]
+                    if missing_cols:
+                        st.error("File không đủ cột cần thiết (B,Z,AF,AL).")
+                    else:
+                        df = df[list(needed_cols.keys())]
+                        df.rename(columns=needed_cols, inplace=True)
+                        success, fail = 0, 0
+                        errors = []
+                        for idx, row in df.iterrows():
+                            qr_val = str(row.get('qr_code') or '').strip()
+                            imei_val = str(row.get('imei') or '').strip()
+                            device_val = str(row.get('device_name') or '').strip()
+                            cap_val = str(row.get('capacity') or '').strip()
+                            if not qr_val:
+                                fail += 1
+                                errors.append(f"Dòng {idx+1}: thiếu Mã QR")
+                                continue
+                            if not imei_val or not device_val or not cap_val:
+                                fail += 1
+                                errors.append(f"Dòng {idx+1}: thiếu IMEI/Tên/Dung lượng")
+                                continue
+                            res = save_shipment(
+                                qr_code=qr_val,
+                                imei=imei_val,
+                                device_name=device_val,
+                                capacity=cap_val,
+                                supplier=bulk_supplier,
+                                created_by=current_user,
+                                notes=None
+                            )
+                            if res['success']:
+                                success += 1
+                            else:
+                                fail += 1
+                                errors.append(f"Dòng {idx+1}: {res['error']}")
+                        st.success(f"Đã tạo {success} phiếu. Lỗi: {fail}.")
+                        if errors:
+                            with st.expander("Chi tiết lỗi", expanded=False):
+                                for e in errors:
+                                    st.write("- " + e)
+                except Exception as e:
+                    st.error(f"Lỗi đọc file: {e}")
+
     # Get all shipments
     df = get_all_shipments()
     
