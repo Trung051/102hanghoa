@@ -140,6 +140,38 @@ def init_database():
                 1 if supplier['is_active'] else 0
             ))
         
+        # Migration: Check and create TransferSlips table if it doesn't exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='TransferSlips'")
+        if not cursor.fetchone():
+            cursor.execute('''
+            CREATE TABLE TransferSlips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transfer_code TEXT UNIQUE NOT NULL,
+                status TEXT DEFAULT 'Đang chuyển',
+                image_url TEXT,
+                created_by TEXT NOT NULL,
+                completed_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                notes TEXT
+            )
+            ''')
+        
+        # Migration: Check and create TransferSlipItems table if it doesn't exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='TransferSlipItems'")
+        if not cursor.fetchone():
+            cursor.execute('''
+            CREATE TABLE TransferSlipItems (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transfer_slip_id INTEGER NOT NULL,
+                shipment_id INTEGER NOT NULL,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (transfer_slip_id) REFERENCES TransferSlips(id),
+                FOREIGN KEY (shipment_id) REFERENCES ShipmentDetails(id),
+                UNIQUE(transfer_slip_id, shipment_id)
+            )
+            ''')
+        
         conn.commit()
         return True
     except Exception as e:
