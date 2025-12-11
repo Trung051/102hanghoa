@@ -78,10 +78,11 @@ from database import (
     set_user_password, get_all_users, get_shipment_by_id,
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
-    update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data
+    update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
+    auto_update_status_after_1hour, get_active_shipments
 )
 from qr_scanner import decode_qr_from_image
-from auth import require_login, get_current_user, logout, is_admin
+from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
 from config import STATUS_VALUES
 from google_sheets import push_shipments_to_sheets, test_connection
 from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder
@@ -698,6 +699,32 @@ def show_create_shipment_form(current_user, qr_code):
     with col2:
         st.subheader("Thông Tin Phiếu")
         
+        # Kiểm tra user có phải cửa hàng không
+        store_user = is_store_user()
+        store_name = None
+        if store_user:
+            store_name = get_store_name_from_username(current_user)
+            st.info(f"🏪 Tạo phiếu cho: **{store_name}**")
+        
+        # Trường cửa hàng (chỉ hiện cho user cửa hàng)
+        if store_user:
+            store_name_input = st.text_input(
+                "Tên cửa hàng:",
+                value=store_name,
+                key="store_name_input",
+                disabled=True,
+                help="Tự động điền từ tài khoản đăng nhập"
+            )
+        else:
+            store_name_input = st.text_input(
+                "Tên cửa hàng (nếu có):",
+                value="",
+                key="store_name_input",
+                help="Nhập tên cửa hàng nếu có"
+            )
+            if store_name_input.strip():
+                store_name = store_name_input.strip()
+        
         # Get suppliers
         suppliers_df = get_suppliers()
         if suppliers_df.empty:
@@ -743,6 +770,9 @@ def show_create_shipment_form(current_user, qr_code):
                         st.error(f"❌ Upload ảnh thất bại: {upload_res['error']}")
                         st.stop()
 
+                # Set status mặc định: "Phiếu tạm" cho cửa hàng, "Đang gửi" cho các user khác
+                default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
+                
                 result = save_shipment(
                     qr_code=qr_code.strip(),
                     imei=imei.strip(),
@@ -751,7 +781,9 @@ def show_create_shipment_form(current_user, qr_code):
                     supplier=supplier,
                     created_by=current_user,
                     notes=notes if notes else None,
-                    image_url=image_url
+                    image_url=image_url,
+                    status=default_status,
+                    store_name=store_name
                 )
                 
                 if result['success']:
@@ -890,12 +922,26 @@ def show_update_shipment_form(current_user, found_shipment):
         st.subheader("Cập Nhật Trạng Thái")
         
         current_status = found_shipment['status']
+        store_name = found_shipment.get('store_name', '')
+        if store_name:
+            st.info(f"🏪 Cửa hàng: **{store_name}**")
         st.info(f"Trạng thái hiện tại: **{current_status}**")
+        
+        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
+        suppliers_df = get_suppliers()
+        status_options = STATUS_VALUES.copy()
+        
+        # Thêm các trạng thái "Gửi + tên NCC" nếu chưa có
+        for _, supplier_row in suppliers_df.iterrows():
+            supplier_name = supplier_row['name']
+            send_status = f"Gửi {supplier_name}"
+            if send_status not in status_options:
+                status_options.append(send_status)
         
         new_status = st.selectbox(
             "Trạng thái mới:",
-            STATUS_VALUES,
-            index=STATUS_VALUES.index(current_status) if current_status in STATUS_VALUES else 0,
+            status_options,
+            index=status_options.index(current_status) if current_status in status_options else 0,
             key="status_select"
         )
         
@@ -913,8 +959,8 @@ def show_update_shipment_form(current_user, found_shipment):
                 if result['success']:
                     st.success(f"Đã cập nhật trạng thái thành: **{new_status}**")
                     st.balloons()
-                    # Notify Telegram nếu đã nhận
-                    if new_status == 'Đã nhận':
+                    # Notify Telegram nếu đã nhận hoặc hoàn thành
+                    if new_status in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
                         res = notify_shipment_if_received(found_shipment['id'], force=True)
                         if res and not res.get('success'):
                             st.warning(f"Không gửi được Telegram: {res.get('error')}")
@@ -936,6 +982,14 @@ def show_dashboard():
     """Show simple, clean dashboard with statistics"""
     st.title("Dashboard Quản Lý")
     
+    # Tự động chuyển trạng thái "Chuyển kho" → "Đang xử lý" sau 1 giờ
+    try:
+        auto_result = auto_update_status_after_1hour()
+        if auto_result['success'] and auto_result['updated_count'] > 0:
+            st.info(f"🔄 Đã tự động chuyển {auto_result['updated_count']} phiếu từ 'Chuyển kho' sang 'Đang xử lý'")
+    except Exception as e:
+        print(f"Error auto-updating status: {e}")
+    
     # Get all shipments
     df = get_all_shipments()
     
@@ -953,12 +1007,12 @@ def show_dashboard():
         return
     
     # Calculate metrics
+    from config import ACTIVE_STATUSES, COMPLETED_STATUSES
     total = len(df)
-    pending = len(df[df['status'] == 'Phiếu tạm'])
-    sending = len(df[df['status'] == 'Đang gửi'])
-    received = len(df[df['status'] == 'Đã nhận'])
-    transfer = len(df[df['status'] == 'Chuyển kho'])
-    error = len(df[df['status'].isin(['Hư hỏng', 'Mất'])])
+    active_df = get_active_shipments()
+    active_count = len(active_df)
+    completed_df = df[df['status'].isin(COMPLETED_STATUSES)]
+    completed_count = len(completed_df)
     
     # Simple metrics layout
     st.markdown("### Thống Kê")
@@ -967,17 +1021,9 @@ def show_dashboard():
     with col1:
         st.metric("Tổng Phiếu", total)
     with col2:
-        st.metric("Đã Nhận", received)
+        st.metric("Đang Hoạt Động", active_count, delta=None)
     with col3:
-        st.metric("Đang Gửi", sending)
-    
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        st.metric("Phiếu Tạm", pending)
-    with col5:
-        st.metric("Chuyển Kho", transfer)
-    with col6:
-        st.metric("Lỗi/Hư Hỏng", error)
+        st.metric("Đã Hoàn Thành", completed_count)
     
     st.divider()
     
@@ -999,35 +1045,78 @@ def show_dashboard():
     
     st.divider()
     
-    # Recent shipments
-    st.markdown("### Phiếu Gần Đây")
+    # Phiếu đang hoạt động (chưa hoàn thành)
+    st.markdown("### 🔴 Phiếu Đang Hoạt Động")
     
-    # Get recent shipments (last 10) - fix the nlargest error
-    try:
-        if 'sent_time' in df.columns:
-            # Convert to datetime if possible
-            df_copy = df.copy()
-            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-            # Sort by sent_time descending and take first 10
-            recent_df = df_copy.sort_values('sent_time', ascending=False, na_position='last').head(10)
-            # Drop the datetime column we added, keep original
-            recent_df = df.loc[recent_df.index]
+    if not active_df.empty:
+        # Format last_updated để hiển thị
+        if 'last_updated' in active_df.columns:
+            active_df_display = active_df.copy()
+            active_df_display['last_updated'] = pd.to_datetime(active_df_display['last_updated'], errors='coerce')
+            active_df_display['last_updated'] = active_df_display['last_updated'].dt.strftime('%d/%m/%Y %H:%M')
         else:
-            recent_df = df.head(10)
-    except:
-        # Fallback to simple head if any error
-        recent_df = df.head(10)
-    
-    if not recent_df.empty:
-        # Simple table display
-        display_cols = ['qr_code', 'device_name', 'status', 'supplier']
-        available_cols = [col for col in display_cols if col in recent_df.columns]
+            active_df_display = active_df.copy()
+        
+        # Tạo cột hiển thị với icon online
+        display_data = []
+        for idx, row in active_df_display.iterrows():
+            status_icon = "🟢"  # Icon online
+            last_update = row.get('last_updated', 'N/A')
+            store_name = row.get('store_name', '')
+            store_info = f" ({store_name})" if store_name else ""
+            
+            display_data.append({
+                '🔴': status_icon,
+                'Mã QR': row.get('qr_code', ''),
+                'Tên thiết bị': row.get('device_name', ''),
+                'Trạng thái': row.get('status', ''),
+                'Cửa hàng': store_name if store_name else '-',
+                'Cập nhật lúc': last_update
+            })
+        
+        display_df = pd.DataFrame(display_data)
         st.dataframe(
-            recent_df[available_cols],
+            display_df,
             use_container_width=True,
             hide_index=True,
-            height=300
+            height=400
         )
+        
+        # Cho phép click vào từng phiếu để xem chi tiết
+        st.markdown("💡 **Nhấp vào một phiếu để xem chi tiết và cập nhật trạng thái**")
+    else:
+        st.info("Không có phiếu nào đang hoạt động.")
+    
+    st.divider()
+    
+    # Recent shipments (chỉ phiếu đã hoàn thành)
+    st.markdown("### Phiếu Gần Đây (Đã Hoàn Thành)")
+    
+    if not completed_df.empty:
+        try:
+            if 'sent_time' in completed_df.columns:
+                completed_df_copy = completed_df.copy()
+                completed_df_copy['sent_time'] = pd.to_datetime(completed_df_copy['sent_time'], errors='coerce')
+                recent_df = completed_df_copy.sort_values('sent_time', ascending=False, na_position='last').head(10)
+                recent_df = completed_df.loc[recent_df.index]
+            else:
+                recent_df = completed_df.head(10)
+        except:
+            recent_df = completed_df.head(10)
+        
+        if not recent_df.empty:
+            display_cols = ['qr_code', 'device_name', 'status', 'supplier']
+            if 'store_name' in recent_df.columns:
+                display_cols.insert(-1, 'store_name')
+            available_cols = [col for col in display_cols if col in recent_df.columns]
+            st.dataframe(
+                recent_df[available_cols],
+                use_container_width=True,
+                hide_index=True,
+                height=300
+            )
+    else:
+        st.info("Chưa có phiếu nào đã hoàn thành.")
     
     # Filters and full list (collapsed)
     with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
@@ -1165,12 +1254,29 @@ def show_manage_shipments():
             capacity = st.text_input("Dung lượng *")
             suppliers_df = get_suppliers()
             supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
+            
+            # Trường cửa hàng
+            store_user = is_store_user()
+            store_name = None
+            if store_user:
+                store_name = get_store_name_from_username(current_user)
+                store_input = st.text_input("Cửa hàng:", value=store_name, disabled=True)
+            else:
+                store_input = st.text_input("Cửa hàng (nếu có):", value="")
+                if store_input.strip():
+                    store_name = store_input.strip()
+            
             notes = st.text_area("Ghi chú")
             if st.form_submit_button("💾 Lưu phiếu mới", type="primary"):
                 if not qr or not imei or not device_name or not capacity:
                     st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
                 else:
-                    res = save_shipment(qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), supplier, current_user, notes if notes else None)
+                    default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
+                    res = save_shipment(
+                        qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
+                        supplier, current_user, notes if notes else None,
+                        status=default_status, store_name=store_name
+                    )
                     if res['success']:
                         st.success(f"Đã tạo phiếu #{res['id']}")
                     else:
@@ -1211,6 +1317,12 @@ def show_manage_shipments():
                                 fail += 1
                                 errors.append(f"Dòng {idx+1}: thiếu IMEI/Tên/Dung lượng")
                                 continue
+                            # Xác định store_name nếu là user cửa hàng
+                            store_user = is_store_user()
+                            store_name = None
+                            if store_user:
+                                store_name = get_store_name_from_username(current_user)
+                            
                             res = save_shipment(
                                 qr_code=qr_val,
                                 imei=imei_val,
@@ -1219,7 +1331,8 @@ def show_manage_shipments():
                                 supplier=bulk_supplier if bulk_supplier != "Chưa chọn" else "Chưa chọn",
                                 created_by=current_user,
                                 notes=None,
-                                status="Phiếu tạm"
+                                status="Phiếu tạm",
+                                store_name=store_name
                             )
                             if res['success']:
                                 success += 1
@@ -1352,9 +1465,13 @@ def show_manage_shipments():
                 with info_col2:
                     st.write(f"**NCC:** {row['supplier']}")
                     st.write(f"**Trạng thái:** {row['status']}")
+                    if pd.notna(row.get('store_name')) and row.get('store_name'):
+                        st.write(f"**Cửa hàng:** {row['store_name']}")
                     st.write(f"**Thời gian gửi:** {row['sent_time']}")
                     if pd.notna(row['received_time']):
                         st.write(f"**Thời gian nhận:** {row['received_time']}")
+                    if pd.notna(row.get('last_updated')) and row.get('last_updated'):
+                        st.write(f"**Cập nhật lúc:** {row['last_updated']}")
                     st.write(f"**Người tạo:** {row['created_by']}")
                     if pd.notna(row['updated_by']):
                         st.write(f"**Người cập nhật:** {row['updated_by']}")
@@ -1416,11 +1533,30 @@ def show_manage_shipments():
                             key=f"edit_supplier_{row['id']}"
                         )
                         
+                        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
+                        status_options = STATUS_VALUES.copy()
+                        for _, supplier_row in suppliers_df.iterrows():
+                            supplier_name = supplier_row['name']
+                            send_status = f"Gửi {supplier_name}"
+                            if send_status not in status_options:
+                                status_options.append(send_status)
+                        
+                        current_status_idx = 0
+                        if row['status'] in status_options:
+                            current_status_idx = status_options.index(row['status'])
+                        
                         edit_status = st.selectbox(
                             "Trạng thái:",
-                            STATUS_VALUES,
-                            index=STATUS_VALUES.index(row['status']) if row['status'] in STATUS_VALUES else 0,
+                            status_options,
+                            index=current_status_idx,
                             key=f"edit_status_{row['id']}"
+                        )
+                        
+                        edit_store_name = st.text_input(
+                            "Cửa hàng:",
+                            value=row.get('store_name', '') if pd.notna(row.get('store_name')) else '',
+                            key=f"edit_store_{row['id']}",
+                            help="Tên cửa hàng (nếu có)"
                         )
                         
                         edit_notes = st.text_area("Ghi chú:", value=row['notes'] if pd.notna(row['notes']) else '', key=f"edit_notes_{row['id']}")
@@ -1461,14 +1597,15 @@ def show_manage_shipments():
                                 status=edit_status,
                                 notes=edit_notes.strip() if edit_notes.strip() else None,
                                 updated_by=current_user,
-                                image_url=image_url
+                                image_url=image_url,
+                                store_name=edit_store_name.strip() if edit_store_name.strip() else None
                             )
                             
                             if result['success']:
                                 st.success("✅ Đã cập nhật thành công!")
-                                # Notify Telegram if status is Đã nhận
+                                # Notify Telegram if status is Đã nhận hoặc Hoàn thành chuyển cửa hàng
                                 updated = get_shipment_by_qr_code(edit_qr_code.strip())
-                                if updated and updated.get('status') == 'Đã nhận':
+                                if updated and updated.get('status') in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
                                     res = notify_shipment_if_received(
                                         updated['id'],
                                         force=not row.get('telegram_message_id'),
