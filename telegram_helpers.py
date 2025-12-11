@@ -1,5 +1,5 @@
 from datetime import datetime
-from database import update_telegram_message, get_shipment_by_id
+from database import update_telegram_message, get_shipment_by_id, get_transfer_slip, get_transfer_slip_items
 from telegram_notify import send_text, send_photo
 
 
@@ -59,5 +59,58 @@ def notify_shipment_if_received(shipment_id, force=False, is_update_image=False)
     if res.get('success') and res.get('message_id'):
         update_telegram_message(shipment_id, res['message_id'])
 
+    return res
+
+
+def send_transfer_slip_notification(transfer_slip_id):
+    """
+    Send Telegram notification for completed transfer slip.
+    Includes: transfer code, IMEIs (masked), transfer time, transfer person, image.
+    """
+    slip = get_transfer_slip(transfer_slip_id)
+    if not slip:
+        return {'success': False, 'error': 'Không tìm thấy phiếu chuyển'}
+    
+    items_df = get_transfer_slip_items(transfer_slip_id)
+    if items_df.empty:
+        return {'success': False, 'error': 'Phiếu chuyển không có máy nào'}
+    
+    # Format IMEIs (masked - tô đen)
+    imeis = []
+    for idx, row in items_df.iterrows():
+        imei = str(row['imei'])
+        # Mask IMEI: show first 2 and last 2 digits, mask middle
+        if len(imei) > 4:
+            masked = imei[:2] + '█' * (len(imei) - 4) + imei[-2:]
+        else:
+            masked = '█' * len(imei)
+        imeis.append(f"{row['qr_code']}: {masked}")
+    
+    imeis_text = "\n".join(imeis)
+    
+    # Format message
+    transfer_time = slip.get('completed_at') or slip.get('created_at') or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    transfer_person = slip.get('completed_by') or slip.get('created_by', 'N/A')
+    
+    message_text = (
+        f"<b>Phiếu Chuyển Hoàn Thành</b>\n"
+        f"Mã phiếu chuyển: <code>{slip['transfer_code']}</code>\n"
+        f"Giờ chuyển: {transfer_time}\n"
+        f"Người chuyển: {transfer_person}\n"
+        f"Số lượng máy: {len(items_df)}\n\n"
+        f"<b>IMEI các máy:</b>\n{imeis_text}"
+    )
+    
+    if slip.get('notes'):
+        message_text += f"\n\nGhi chú: {slip['notes']}"
+    
+    image_url = slip.get('image_url')
+    
+    # Send with photo if available, otherwise text only
+    if image_url:
+        res = send_photo(image_url, message_text)
+    else:
+        res = send_text(message_text)
+    
     return res
 
