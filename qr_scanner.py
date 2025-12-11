@@ -49,7 +49,7 @@ def decode_qr_from_image(image):
         if len(image_array.shape) >= 2:
             try:
                 h, w = image_array.shape[:2]
-                scale = 2  # upscale 2x
+                scale = 3  # upscale ~3x for distant/blurred QR
                 if h > 0 and w > 0:
                     if len(image_array.shape) == 3:
                         image_array = cv2.resize(image_array, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
@@ -57,6 +57,12 @@ def decode_qr_from_image(image):
                         image_array = cv2.resize(image_array, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
             except Exception:
                 pass
+
+        # Sharpen to help edge definition
+        try:
+            image_array_sharp = sharpen_image_opencv(image_array)
+        except Exception:
+            image_array_sharp = image_array
 
         # Method 1: Try OpenCV QRCodeDetector first (best for Windows, no DLL needed)
         if CV2_AVAILABLE:
@@ -85,6 +91,25 @@ def decode_qr_from_image(image):
                     return data
             except Exception as e:
                 print(f"OpenCV decode failed: {e}")
+            # Try again on sharpened image
+            try:
+                if len(image_array_sharp.shape) == 3:
+                    gray_s = cv2.cvtColor(image_array_sharp, cv2.COLOR_RGB2GRAY)
+                else:
+                    gray_s = image_array_sharp
+                detector = cv2.QRCodeDetector()
+                retval, decoded_info, points, straight_qrcode = detector.detectAndDecodeMulti(gray_s)
+                if retval and decoded_info:
+                    result = decoded_info[0] if isinstance(decoded_info, (list, tuple)) else decoded_info
+                    if result:
+                        print("QR decoded successfully using OpenCV (multi, sharpened)")
+                        return result
+                data_s, bbox_s, rectified_s = detector.detectAndDecode(gray_s)
+                if data_s:
+                    print("QR decoded successfully using OpenCV (single, sharpened)")
+                    return data_s
+            except Exception as e:
+                print(f"OpenCV decode on sharpened failed: {e}")
         
         # Method 2: Try pyzbar as fallback
         if PYZBAR_AVAILABLE:
@@ -103,6 +128,8 @@ def decode_qr_from_image(image):
                 lambda img: decode_grayscale_opencv(img),
                 lambda img: decode_resized_opencv(img),
                 lambda img: decode_binarized_opencv(img),
+                lambda img: decode_resized_opencv(image_array_sharp),
+                lambda img: decode_binarized_opencv(image_array_sharp),
             ]
             
             for i, method in enumerate(methods):
@@ -194,6 +221,20 @@ def decode_binarized_opencv(image_array):
         return None
     except:
         return None
+
+
+def sharpen_image_opencv(img):
+    """Unsharp mask to enhance edges for QR detection."""
+    if not CV2_AVAILABLE:
+        return img
+    try:
+        # Work in RGB/gray as-is; use mild blur and strong sharpening
+        blur = cv2.GaussianBlur(img, (0, 0), sigmaX=1.2)
+        sharp = cv2.addWeighted(img, 1.8, blur, -0.8, 0)
+        sharp = np.clip(sharp, 0, 255).astype(np.uint8)
+        return sharp
+    except Exception:
+        return img
 
 
 def decode_grayscale(image_array):
