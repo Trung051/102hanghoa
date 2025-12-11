@@ -12,6 +12,7 @@ import qrcode
 import base64
 from io import BytesIO
 import streamlit.components.v1 as components
+import requests
 
 # Write service_account.json from secrets/env if missing (for Streamlit Cloud)
 import os
@@ -235,6 +236,80 @@ def render_labels_bulk(shipments):
     components.html(full_html, height=400, scrolling=True)
 
 # ----------------------- UI Helpers ----------------------- #
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def _load_drive_image(file_id, max_size=(800, 800)):
+    """
+    Load and cache image from Google Drive by file ID
+    Returns PIL Image or None
+    """
+    try:
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        response = requests.get(download_url, timeout=10)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content))
+            # Resize if too large to reduce memory usage
+            if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+            return img
+    except Exception as e:
+        print(f"Error loading image {file_id}: {e}")
+    return None
+
+
+def display_drive_image(image_url, width=300, caption="", use_expander=False):
+    """
+    Download and display image from Google Drive URL with caching
+    use_expander: If True, show image in expander (lazy load)
+    """
+    try:
+        # Extract file ID from URL
+        file_id = None
+        if 'uc?export=download&id=' in image_url:
+            file_id = image_url.split('id=')[-1]
+        elif 'id=' in image_url:
+            file_id = image_url.split('id=')[-1].split('&')[0]
+        
+        if file_id:
+            # Use cached image loader
+            if use_expander:
+                with st.expander("📷 Xem ảnh", expanded=False):
+                    img = _load_drive_image(file_id)
+                    if img:
+                        st.image(img, width=width, caption=caption)
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                    else:
+                        st.warning("Không thể tải ảnh từ Drive")
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            else:
+                # Show loading spinner
+                with st.spinner("Đang tải ảnh..."):
+                    img = _load_drive_image(file_id)
+                    if img:
+                        st.image(img, width=width, caption=caption)
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                    else:
+                        st.warning("Không thể tải ảnh từ Drive")
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            return True
+        else:
+            # Try direct URL (no caching for non-Drive URLs)
+            try:
+                response = requests.get(image_url, timeout=10)
+                if response.status_code == 200:
+                    img = Image.open(BytesIO(response.content))
+                    st.image(img, width=width, caption=caption)
+                    return True
+            except:
+                pass
+            
+            st.image(image_url, width=width, caption=caption)
+            return True
+    except Exception as e:
+        st.warning(f"Không thể hiển thị ảnh: {str(e)}")
+        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+        return False
+
+
 def inject_sidebar_styles():
     """Apply custom styles for a cleaner, more professional sidebar."""
     st.markdown(
@@ -1789,15 +1864,7 @@ def show_transfer_slip_scan(current_user):
         if active_slip.get('image_url'):
             st.divider()
             st.subheader("Ảnh phiếu chuyển")
-            image_url = active_slip['image_url']
-            # Convert direct download link to view link for display
-            if 'uc?export=download&id=' in image_url:
-                file_id = image_url.split('id=')[-1]
-                view_link = f"https://drive.google.com/uc?id={file_id}"
-                st.image(view_link, width=250, caption="Ảnh phiếu chuyển")
-                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-            else:
-                st.image(image_url, width=250, caption="Ảnh phiếu chuyển")
+            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển")
         
         st.divider()
         
@@ -1903,17 +1970,7 @@ def show_manage_transfer_slips():
                 st.write(f"**Người hoàn thành:** {slip['completed_by']}")
                 st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
             if slip['image_url']:
-                # Convert direct download link to view link for display
-                image_url = slip['image_url']
-                # If it's a direct download link, convert to view link
-                if 'uc?export=download&id=' in image_url:
-                    file_id = image_url.split('id=')[-1]
-                    # Use view link for better display
-                    view_link = f"https://drive.google.com/uc?id={file_id}"
-                    st.image(view_link, width=300, caption="Ảnh phiếu chuyển")
-                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-                else:
-                    st.image(image_url, width=300, caption="Ảnh phiếu chuyển")
+                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển")
         
         st.subheader(f"Danh sách máy ({len(items_df)} máy)")
         st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
