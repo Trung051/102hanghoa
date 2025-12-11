@@ -50,8 +50,7 @@ def _write_sa_json(raw: str):
 
 
 def ensure_service_account_file():
-    if os.path.exists("service_account.json"):
-        return
+    """Rewrite service_account.json from secrets/env on every startup to avoid stale/bad files."""
     raw = None
     if st is not None and "SERVICE_ACCOUNT_JSON" in st.secrets:
         raw = st.secrets["SERVICE_ACCOUNT_JSON"]
