@@ -25,16 +25,7 @@ SCOPES = [
 
 def _get_drive_service():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        # Try to write service account from secrets/env at runtime
-        try:
-            import streamlit as st
-            if "SERVICE_ACCOUNT_JSON" in st.secrets:
-                with open(SERVICE_ACCOUNT_FILE, "w", encoding="utf-8") as f:
-                    f.write(st.secrets["SERVICE_ACCOUNT_JSON"])
-            else:
-                return None, f"File {SERVICE_ACCOUNT_FILE} không tồn tại"
-        except Exception:
-            return None, f"File {SERVICE_ACCOUNT_FILE} không tồn tại"
+        return None, f"File {SERVICE_ACCOUNT_FILE} không tồn tại"
     try:
         creds = Credentials.from_service_account_file(
             SERVICE_ACCOUNT_FILE, scopes=SCOPES
