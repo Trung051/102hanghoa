@@ -1156,3 +1156,58 @@ def update_transfer_slip_shipments_status(transfer_slip_id, new_status):
     finally:
         conn.close()
 
+
+def clear_all_data():
+    """
+    Xóa toàn bộ dữ liệu trong database (chỉ giữ lại cấu trúc bảng và dữ liệu mặc định)
+    CẢNH BÁO: Hàm này sẽ xóa TẤT CẢ dữ liệu!
+    
+    Returns:
+        dict: {'success': bool, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Xóa tất cả dữ liệu từ các bảng (giữ lại cấu trúc)
+        cursor.execute('DELETE FROM TransferSlipItems')
+        cursor.execute('DELETE FROM TransferSlips')
+        cursor.execute('DELETE FROM AuditLog')
+        cursor.execute('DELETE FROM ShipmentDetails')
+        
+        # Xóa suppliers nhưng giữ lại cấu trúc
+        cursor.execute('DELETE FROM Suppliers')
+        
+        # Xóa users nhưng giữ lại cấu trúc
+        cursor.execute('DELETE FROM Users')
+        
+        # Seed lại dữ liệu mặc định
+        # Seed default users
+        for username, password in USERS.items():
+            is_admin = 1 if username == 'admin' else 0
+            cursor.execute('''
+            INSERT INTO Users (username, password, is_admin)
+            VALUES (?, ?, ?)
+            ''', (username, password, is_admin))
+        
+        # Seed default suppliers
+        for supplier in DEFAULT_SUPPLIERS:
+            cursor.execute('''
+            INSERT INTO Suppliers (id, name, contact, address, is_active)
+            VALUES (?, ?, ?, ?, ?)
+            ''', (
+                supplier['id'],
+                supplier['name'],
+                supplier['contact'],
+                supplier['address'],
+                1 if supplier['is_active'] else 0
+            ))
+        
+        conn.commit()
+        return {'success': True, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
