@@ -7,6 +7,8 @@ import streamlit as st
 from PIL import Image
 import pandas as pd
 from datetime import datetime
+import cv2
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
 # Write service_account.json from secrets/env if missing (for Streamlit Cloud)
 import os
@@ -197,11 +199,30 @@ def scan_qr_screen():
     # Check if we have a found shipment to display
     found_shipment = st.session_state.get('found_shipment', None)
     scanned_qr_code = st.session_state.get('scanned_qr_code', None)
+    # Auto-detected QR from WebRTC
+    webrtc_qr = st.session_state.get('webrtc_qr', None)
     
     # If we found a shipment, show it
     if found_shipment:
         show_shipment_info(current_user, found_shipment)
         return
+    # If QR from WebRTC but no shipment found yet
+    if webrtc_qr and not found_shipment:
+        scanned_qr_code = webrtc_qr
+        st.session_state['scanned_qr_code'] = webrtc_qr
+        scanned_data = parse_qr_code(webrtc_qr) or {'qr_code': webrtc_qr}
+        st.session_state['scanned_qr_data'] = scanned_data
+        if scanned_data:
+            existing_shipment = get_shipment_by_qr_code(scanned_data.get('qr_code', '').strip())
+            if existing_shipment:
+                st.session_state['found_shipment'] = existing_shipment
+            else:
+                st.success("Đã nhận diện QR code! Đang chuyển sang form tạo phiếu...")
+            st.session_state['show_camera'] = False
+            st.session_state['webrtc_qr'] = None
+            st.rerun()
+        else:
+            st.session_state['webrtc_qr'] = None
     
     # If we have scanned QR code but no shipment found, show create form
     if scanned_qr_code and not found_shipment:
@@ -212,7 +233,42 @@ def scan_qr_screen():
     
     # Main layout
     st.subheader("Quét QR Code")
-    
+    st.caption("Chọn 1 trong 2 cách: WebRTC (tự động) hoặc chụp ảnh.")
+
+    # WebRTC live scan
+    st.markdown("**Cách 1: WebRTC (tự động)**")
+    class QRVideoProcessor(VideoProcessorBase):
+        def __init__(self):
+            self.last_qr = None
+
+        def recv(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            try:
+                # Convert to RGB for decoder
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                qr_text = decode_qr_from_image(img_rgb)
+                if qr_text:
+                    self.last_qr = qr_text
+            except Exception:
+                pass
+            return frame
+
+    ctx = webrtc_streamer(
+        key="qr_webrtc",
+        video_processor_factory=QRVideoProcessor,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
+
+    if ctx and ctx.video_processor:
+        if ctx.video_processor.last_qr:
+            st.success(f"Đã nhận diện QR: {ctx.video_processor.last_qr}")
+            st.session_state['webrtc_qr'] = ctx.video_processor.last_qr
+            ctx.video_processor.last_qr = None
+            st.rerun()
+
+    st.divider()
+    st.markdown("**Cách 2: Chụp ảnh (nhấn nút)**")
     # Button to start scanning
     col_btn1, col_btn2 = st.columns([1, 3])
     with col_btn1:
@@ -220,6 +276,7 @@ def scan_qr_screen():
             st.session_state['show_camera'] = True
             st.session_state['scanned_qr_code'] = None
             st.session_state['found_shipment'] = None
+            st.session_state['webrtc_qr'] = None
             st.rerun()
     
     with col_btn2:
