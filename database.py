@@ -91,9 +91,16 @@ def init_database():
         CREATE TABLE IF NOT EXISTS Users (
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
-            is_admin BOOLEAN DEFAULT 0
+            is_admin BOOLEAN DEFAULT 0,
+            is_store BOOLEAN DEFAULT 0
         )
         ''')
+        
+        # Migration: Add is_store column if it doesn't exist
+        cursor.execute("PRAGMA table_info(Users)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "is_store" not in cols:
+            cursor.execute("ALTER TABLE Users ADD COLUMN is_store BOOLEAN DEFAULT 0")
         
         # Create TransferSlips table (Phiếu chuyển)
         cursor.execute('''
@@ -126,10 +133,11 @@ def init_database():
         # Seed default users from config
         for username, password in USERS.items():
             is_admin = 1 if username == 'admin' else 0
+            is_store = 1 if username.startswith('cuahang') else 0
             cursor.execute('''
-            INSERT OR IGNORE INTO Users (username, password, is_admin)
-            VALUES (?, ?, ?)
-            ''', (username, password, is_admin))
+            INSERT OR IGNORE INTO Users (username, password, is_admin, is_store)
+            VALUES (?, ?, ?, ?)
+            ''', (username, password, is_admin, is_store))
         
         # Seed default suppliers
         for supplier in DEFAULT_SUPPLIERS:
@@ -504,7 +512,7 @@ def get_user(username):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        SELECT username, password, is_admin
+        SELECT username, password, is_admin, is_store
         FROM Users
         WHERE username = ?
         ''', (username,))
@@ -513,7 +521,8 @@ def get_user(username):
             return {
                 'username': result[0],
                 'password': result[1],
-                'is_admin': bool(result[2])
+                'is_admin': bool(result[2]),
+                'is_store': bool(result[3]) if len(result) > 3 else False
             }
         return None
     except Exception as e:
@@ -523,21 +532,28 @@ def get_user(username):
         conn.close()
 
 
-def set_user_password(username, password, is_admin=False):
+def set_user_password(username, password, is_admin=False, is_store=False):
     """
     Create or update user password.
     Uses UPSERT to avoid duplicates.
+    
+    Args:
+        username: Username
+        password: Password
+        is_admin: Whether user is admin (default: False)
+        is_store: Whether user is a store user (default: False)
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        INSERT INTO Users (username, password, is_admin)
-        VALUES (?, ?, ?)
+        INSERT INTO Users (username, password, is_admin, is_store)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(username) DO UPDATE SET
             password = excluded.password,
-            is_admin = excluded.is_admin
-        ''', (username, password, 1 if is_admin else 0))
+            is_admin = excluded.is_admin,
+            is_store = excluded.is_store
+        ''', (username, password, 1 if is_admin else 0, 1 if is_store else 0))
         conn.commit()
         return {'success': True, 'error': None}
     except Exception as e:
@@ -552,14 +568,14 @@ def get_all_users():
     conn = get_connection()
     try:
         df = pd.read_sql_query('''
-        SELECT username, password, is_admin
+        SELECT username, password, is_admin, is_store
         FROM Users
         ORDER BY username
         ''', conn)
         return df
     except Exception as e:
         print(f"Error getting users: {e}")
-        return pd.DataFrame(columns=['username', 'password', 'is_admin'])
+        return pd.DataFrame(columns=['username', 'password', 'is_admin', 'is_store'])
     finally:
         conn.close()
 
@@ -1203,10 +1219,11 @@ def clear_all_data():
         # Seed default users
         for username, password in USERS.items():
             is_admin = 1 if username == 'admin' else 0
+            is_store = 1 if username.startswith('cuahang') else 0
             cursor.execute('''
-            INSERT INTO Users (username, password, is_admin)
-            VALUES (?, ?, ?)
-            ''', (username, password, is_admin))
+            INSERT INTO Users (username, password, is_admin, is_store)
+            VALUES (?, ?, ?, ?)
+            ''', (username, password, is_admin, is_store))
         
         # Seed default suppliers
         for supplier in DEFAULT_SUPPLIERS:
