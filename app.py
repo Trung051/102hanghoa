@@ -1182,30 +1182,13 @@ def show_manage_shipments():
     
     # Display shipments
     st.subheader(f"Tổng số: {len(filtered_df)} phiếu")
-    st.caption("Tip: Chọn nhiều phiếu để in tem hàng loạt.")
+    st.caption("Tip: Bấm 'In tem' để in toàn bộ danh sách đang lọc (tối ưu khi đã lọc hẹp).")
 
-    # Bulk label selection
-    options = filtered_df.apply(lambda r: (r['id'], f"{r['qr_code']} | {r['device_name']}"), axis=1).tolist()
-    option_labels = [label for (_id, label) in options]
-    option_ids = [sid for (sid, _label) in options]
-
-    selected_labels = st.multiselect(
-        "Chọn phiếu để in tem hàng loạt:",
-        options=option_labels,
-        default=[],
-        key="bulk_label_select"
-    )
-
-    selected_ids = [option_ids[option_labels.index(lbl)] for lbl in selected_labels] if selected_labels else []
-
-    if selected_ids:
-        if st.button("🖨️ In tem các phiếu đã chọn", key="bulk_print_btn"):
-            selected_shipments = filtered_df[filtered_df['id'].isin(selected_ids)].to_dict(orient='records')
-            if selected_shipments:
-                st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
-                render_labels_bulk(selected_shipments)
-            else:
-                st.warning("Không tìm thấy phiếu phù hợp để in.")
+    if not filtered_df.empty:
+        if st.button("🖨️ In tem danh sách đang lọc", key="bulk_print_all_btn"):
+            selected_shipments = filtered_df.to_dict(orient='records')
+            st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
+            render_labels_bulk(selected_shipments)
     
     for idx, row in filtered_df.iterrows():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
