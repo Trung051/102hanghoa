@@ -253,11 +253,11 @@ def _get_drive_image_bytes(file_id):
     return None
 
 
-def display_drive_image(image_url, width=300, caption="", lazy_load=True):
+def display_drive_image(image_url, width=300, caption=""):
     """
-    Hiển thị ảnh từ Google Drive với lazy loading
-    - lazy_load=True: Chỉ tải ảnh khi người dùng click mở (không tải tất cả cùng lúc)
-    - lazy_load=False: Tải ngay (chỉ dùng khi cần thiết)
+    Hiển thị ảnh từ Google Drive tự động (không cần expander)
+    - Tự động tải và hiển thị ảnh khi được gọi
+    - Cache tối đa 5 ảnh, tự động xóa ảnh cũ khi quá giới hạn
     """
     try:
         # Extract file ID from URL
@@ -268,30 +268,16 @@ def display_drive_image(image_url, width=300, caption="", lazy_load=True):
             file_id = image_url.split('id=')[-1].split('&')[0]
         
         if file_id:
-            if lazy_load:
-                # Lazy loading: chỉ tải khi người dùng click mở expander
-                with st.expander("📷 Xem ảnh", expanded=False):
-                    # Chỉ tải ảnh khi expander được mở
-                    image_bytes = _get_drive_image_bytes(file_id)
-                    
-                    if image_bytes:
-                        img = Image.open(BytesIO(image_bytes))
-                        st.image(img, width=width, caption=caption)
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-                    else:
-                        st.warning("Không thể tải ảnh từ Drive")
-                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            # Tải ảnh với cache (tối đa 5 ảnh)
+            image_bytes = _get_drive_image_bytes(file_id)
+            
+            if image_bytes:
+                img = Image.open(BytesIO(image_bytes))
+                st.image(img, width=width, caption=caption)
+                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
             else:
-                # Tải ngay (chỉ dùng khi thực sự cần)
-                image_bytes = _get_drive_image_bytes(file_id)
-                
-                if image_bytes:
-                    img = Image.open(BytesIO(image_bytes))
-                    st.image(img, width=width, caption=caption)
-                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-                else:
-                    st.warning("Không thể tải ảnh từ Drive")
-                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                st.warning("Không thể tải ảnh từ Drive")
+                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
             return True
         else:
             # Fallback: try direct URL
@@ -1409,7 +1395,7 @@ def show_manage_shipments():
                     st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
                 else:
                     # Hiển thị ảnh với lazy loading - chỉ tải khi người dùng mở expander
-                    display_drive_image(row['image_url'], width=200, caption="Ảnh phiếu", lazy_load=True)
+                    display_drive_image(row['image_url'], width=200, caption="Ảnh phiếu")
 
                 edit_key = f'edit_shipment_{row["id"]}'
                 is_editing = st.session_state.get(edit_key, False)
@@ -1863,7 +1849,7 @@ def show_transfer_slip_scan(current_user):
         if active_slip.get('image_url'):
             st.divider()
             st.subheader("Ảnh phiếu chuyển")
-            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển", lazy_load=False)
+            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển")
         
         st.divider()
         
@@ -1970,7 +1956,7 @@ def show_manage_transfer_slips():
                 st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
             if slip['image_url']:
                 # Tải ảnh ngay khi xem chi tiết phiếu chuyển (không lazy load)
-                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển", lazy_load=False)
+                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển")
         
         st.subheader(f"Danh sách máy ({len(items_df)} máy)")
         st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
