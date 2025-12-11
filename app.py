@@ -1785,6 +1785,20 @@ def show_transfer_slip_scan(current_user):
             for idx, row in items_df.iterrows():
                 st.write(f"• {row['qr_code']} - {row['device_name']}")
         
+        # Show image if transfer slip has one
+        if active_slip.get('image_url'):
+            st.divider()
+            st.subheader("Ảnh phiếu chuyển")
+            image_url = active_slip['image_url']
+            # Convert direct download link to view link for display
+            if 'uc?export=download&id=' in image_url:
+                file_id = image_url.split('id=')[-1]
+                view_link = f"https://drive.google.com/uc?id={file_id}"
+                st.image(view_link, width=250, caption="Ảnh phiếu chuyển")
+                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            else:
+                st.image(image_url, width=250, caption="Ảnh phiếu chuyển")
+        
         st.divider()
         
         # Complete transfer slip
@@ -1889,7 +1903,17 @@ def show_manage_transfer_slips():
                 st.write(f"**Người hoàn thành:** {slip['completed_by']}")
                 st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
             if slip['image_url']:
-                st.image(slip['image_url'], width=200)
+                # Convert direct download link to view link for display
+                image_url = slip['image_url']
+                # If it's a direct download link, convert to view link
+                if 'uc?export=download&id=' in image_url:
+                    file_id = image_url.split('id=')[-1]
+                    # Use view link for better display
+                    view_link = f"https://drive.google.com/uc?id={file_id}"
+                    st.image(view_link, width=300, caption="Ảnh phiếu chuyển")
+                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                else:
+                    st.image(image_url, width=300, caption="Ảnh phiếu chuyển")
         
         st.subheader(f"Danh sách máy ({len(items_df)} máy)")
         st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
