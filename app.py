@@ -979,28 +979,28 @@ def show_manage_shipments():
         st.info("📭 Chưa có phiếu gửi hàng nào")
         return
     
-    # Filters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        filter_status = st.multiselect(
-            "Lọc theo trạng thái:",
-            STATUS_VALUES,
-            default=STATUS_VALUES,
-            key="manage_filter_status"
-        )
-    
-    with col2:
-        suppliers_list = df['supplier'].unique().tolist()
-        filter_supplier = st.multiselect(
-            "Lọc theo NCC:",
-            suppliers_list,
-            default=suppliers_list,
-            key="manage_filter_supplier"
-        )
-    
-    with col3:
-        search_qr = st.text_input("Tìm kiếm theo mã QR:", key="search_qr")
+    with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col1:
+            filter_status = st.multiselect(
+                "Trạng thái:",
+                STATUS_VALUES,
+                default=STATUS_VALUES,
+                key="manage_filter_status"
+            )
+        
+        with col2:
+            suppliers_list = df['supplier'].unique().tolist()
+            filter_supplier = st.multiselect(
+                "NCC:",
+                suppliers_list,
+                default=suppliers_list,
+                key="manage_filter_supplier"
+            )
+        
+        with col3:
+            search_qr = st.text_input("Mã QR:", key="search_qr")
     
     # Apply filters
     filtered_df = df[
