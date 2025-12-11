@@ -159,6 +159,36 @@ def is_admin():
     return username == 'admin'
 
 
+def is_store_user():
+    """
+    Check if current user is a store user (cuahang1, cuahang2, etc.)
+    
+    Returns:
+        bool: True if user is a store user, False otherwise
+    """
+    username = get_current_user()
+    return username and username.startswith('cuahang')
+
+
+def get_store_name_from_username(username):
+    """
+    Get store name from username (e.g., 'cuahang1' -> 'Cửa hàng 1')
+    
+    Args:
+        username: Username string
+        
+    Returns:
+        str: Store name or None if not a store user
+    """
+    if username and username.startswith('cuahang'):
+        try:
+            store_num = username.replace('cuahang', '')
+            return f"Cửa hàng {store_num}"
+        except:
+            return None
+    return None
+
+
 def require_login():
     """
     Show login form if user is not logged in
