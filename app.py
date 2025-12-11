@@ -749,64 +749,67 @@ def show_dashboard():
         st.info("Chưa có dữ liệu phiếu gửi hàng")
         return
     
-    # Calculate metrics
+    # Calculate metrics (bao gồm trạng thái mới)
     total = len(df)
+    pending = len(df[df['status'] == 'Phiếu tạm'])
     sending = len(df[df['status'] == 'Đang gửi'])
     received = len(df[df['status'] == 'Đã nhận'])
+    transfer = len(df[df['status'] == 'Chuyển kho'])
     error = len(df[df['status'].isin(['Hư hỏng', 'Mất'])])
     
-    # 2x2 layout for better mobile readability
-    col1, col2 = st.columns(2)
+    # Compact layout
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Tổng Phiếu", total)
     with col2:
-        st.metric("Đang Gửi", sending)
-    col3, col4 = st.columns(2)
+        st.metric("Phiếu tạm", pending)
     with col3:
-        st.metric("Đã Nhận", received)
+        st.metric("Chuyển kho", transfer)
+    col4, col5 = st.columns(2)
     with col4:
-        st.metric("Lỗi", error)
+        st.metric("Đang Gửi", sending)
+    with col5:
+        st.metric("Đã Nhận", received)
     
     st.divider()
     
-    # Filters
-    st.subheader("Lọc Dữ Liệu")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        filter_status = st.multiselect(
-            "Trạng thái:",
-            STATUS_VALUES,
-            default=STATUS_VALUES
-        )
-    
-    with col2:
-        suppliers_list = df['supplier'].unique().tolist()
-        filter_supplier = st.multiselect(
-            "Nhà cung cấp:",
-            suppliers_list,
-            default=suppliers_list
-        )
-    
-    with col3:
-        # Date range filter (if needed)
-        date_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
-        if 'sent_time' in df.columns:
-            try:
-                df['sent_time'] = pd.to_datetime(df['sent_time'])
-                min_date = df['sent_time'].min().date()
-                max_date = df['sent_time'].max().date()
-                
-                date_range = st.date_input(
-                    "Khoảng thời gian:",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date
-                )
-            except:
-                date_range = None
-        else:
-            date_range = None
+    # Filters (ẩn trong expander để gọn)
+    filter_status = STATUS_VALUES
+    filter_supplier = df['supplier'].unique().tolist()
+    date_range = None
+    with st.expander("Lọc dữ liệu (ẩn/hiện)", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            filter_status = st.multiselect(
+                "Trạng thái:",
+                STATUS_VALUES,
+                default=STATUS_VALUES
+            )
+        
+        with col2:
+            suppliers_list = df['supplier'].unique().tolist()
+            filter_supplier = st.multiselect(
+                "Nhà cung cấp:",
+                suppliers_list,
+                default=suppliers_list
+            )
+        
+        with col3:
+            if 'sent_time' in df.columns:
+                try:
+                    df['sent_time'] = pd.to_datetime(df['sent_time'])
+                    min_date = df['sent_time'].min().date()
+                    max_date = df['sent_time'].max().date()
+                    
+                    date_range = st.date_input(
+                        "Khoảng thời gian:",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+                except:
+                    date_range = None
     
     # Apply filters
     filtered_df = df[
