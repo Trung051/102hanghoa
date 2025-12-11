@@ -24,11 +24,41 @@ def get_secret(name, default=None):
 USERS = {
     'admin': 'admin123',
     'user': 'user123',
-    'staff': 'staff123'
+    'staff': 'staff123',
+    'cuahang1': 'ch123',
+    'cuahang2': 'ch123',
+    'cuahang3': 'ch123'
 }
 
-# Shipment status values
-STATUS_VALUES = ['Phiếu tạm', 'Đang gửi', 'Đã nhận', 'Hư hỏng', 'Mất', 'Chuyển kho']
+# Shipment status values - Luồng mới
+STATUS_VALUES = [
+    'Phiếu tạm',           # Cửa hàng tạo
+    'Chuyển kho',          # Shipper lấy
+    'Đang xử lý',          # Tự động sau 1h từ Chuyển kho
+    'Từ chối',             # Admin/Shipper từ chối
+    'Thất bại',            # Admin/Shipper đánh dấu thất bại
+    'Gửi GHN',             # Gửi + tên NCC (ví dụ)
+    'Gửi J&T',
+    'Gửi Ahamove',
+    'Nhận máy về kho',     # Shipper lấy máy từ NCC về
+    'Hoàn thành chuyển cửa hàng',  # Hoàn thành
+    'Đã nhận',             # Giữ lại cho tương thích
+    'Hư hỏng',
+    'Mất'
+]
+
+# Trạng thái được coi là "đang hoạt động" (chưa hoàn thành)
+ACTIVE_STATUSES = [
+    'Phiếu tạm',
+    'Chuyển kho',
+    'Đang xử lý',
+    'Từ chối',
+    'Thất bại',
+    'Nhận máy về kho'
+] + [s for s in STATUS_VALUES if s.startswith('Gửi ')]  # Tất cả trạng thái "Gửi + NCC"
+
+# Trạng thái hoàn thành
+COMPLETED_STATUSES = ['Hoàn thành chuyển cửa hàng', 'Đã nhận']
 
 # Default status for new shipments
 DEFAULT_STATUS = 'Đang gửi'
