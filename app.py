@@ -8,6 +8,10 @@ from PIL import Image
 import pandas as pd
 from datetime import datetime
 import cv2
+import qrcode
+import base64
+from io import BytesIO
+import streamlit.components.v1 as components
 
 # Write service_account.json from secrets/env if missing (for Streamlit Cloud)
 import os
@@ -79,6 +83,88 @@ from google_sheets import push_shipments_to_sheets, test_connection
 from drive_upload import upload_file_to_drive
 from telegram_notify import send_text, send_photo
 from telegram_helpers import notify_shipment_if_received
+
+# Label/printing helpers defaults
+LABEL_DEFAULT_WIDTH_MM = 50
+LABEL_DEFAULT_HEIGHT_MM = 30
+
+
+def ensure_label_defaults():
+    """Ensure label size defaults exist in session state."""
+    if 'label_width_mm' not in st.session_state:
+        st.session_state['label_width_mm'] = LABEL_DEFAULT_WIDTH_MM
+    if 'label_height_mm' not in st.session_state:
+        st.session_state['label_height_mm'] = LABEL_DEFAULT_HEIGHT_MM
+
+
+def generate_qr_base64(data: str) -> str:
+    """Generate a base64 PNG for a QR code."""
+    qr = qrcode.QRCode(box_size=4, border=1)
+    qr.add_data(data or "")
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def render_label_component(shipment: dict):
+    """Render a printable label for a shipment with QR + info."""
+    ensure_label_defaults()
+    width = st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)
+    height = st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)
+    qr_b64 = generate_qr_base64(shipment.get('qr_code', ''))
+    device_name = shipment.get('device_name', '')
+    imei = shipment.get('imei', '')
+    qr_code = shipment.get('qr_code', '')
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;">
+      <div id="label-area" style="
+        width:{width}mm;
+        height:{height}mm;
+        padding:4mm;
+        box-sizing:border-box;
+        border:1px dashed #d1d5db;
+        display:flex;
+        gap:6px;
+        align-items:center;
+      ">
+        <div style="flex:0 0 40%;">
+          <img src="data:image/png;base64,{qr_b64}" style="width:100%;height:auto;" />
+        </div>
+        <div style="flex:1 1 60%; font-size:11px; line-height:1.35;">
+          <div><strong>QR:</strong> {qr_code}</div>
+          <div><strong>Thiết bị:</strong> {device_name}</div>
+          <div><strong>IMEI:</strong> {imei}</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <button onclick="window.print()" style="
+          background:#ef4444;
+          color:white;
+          border:none;
+          padding:8px 12px;
+          border-radius:8px;
+          cursor:pointer;
+        ">In tem</button>
+      </div>
+      <style>
+        @media print {{
+          body {{
+            margin:0;
+          }}
+          button {{
+            display:none;
+          }}
+          #label-area {{
+            border:none;
+          }}
+        }}
+      </style>
+    </div>
+    """
+    components.html(html, height=220, scrolling=False)
 
 # ----------------------- UI Helpers ----------------------- #
 def inject_sidebar_styles():
@@ -893,6 +979,7 @@ def show_audit_log():
 
 def show_manage_shipments():
     """Show screen to manage all shipments with edit functionality"""
+    ensure_label_defaults()
     st.header("📋 Quản Lý Phiếu Gửi Hàng")
     current_user = get_current_user()
     
@@ -1057,6 +1144,14 @@ def show_manage_shipments():
                 
                 if pd.notna(row['notes']) and row['notes']:
                     st.write(f"**Ghi chú:** {row['notes']}")
+
+                # Print label button
+                print_btn_key = f"print_label_{row['id']}"
+                if st.button("🖨️ In tem QR", key=print_btn_key):
+                    st.session_state['label_preview_id'] = row['id']
+                if st.session_state.get('label_preview_id') == row['id']:
+                    st.info("Xem trước tem. Bấm 'In tem' trong khung để in (chọn máy in/bkhổ giấy trong hộp thoại).")
+                    render_label_component(row)
             
             with col2:
                 # Image upload status
@@ -1188,7 +1283,7 @@ def show_settings_screen():
     
     st.header("⚙️ Cài Đặt - Quản Lý Nhà Cung Cấp")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Danh Sách NCC", "➕ Thêm NCC Mới", "☁️ Google Sheets", "🔑 Tài Khoản"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Danh Sách NCC", "➕ Thêm NCC Mới", "☁️ Google Sheets", "🔑 Tài Khoản", "🖨️ In tem"])
     
     with tab1:
         show_suppliers_list()
@@ -1201,6 +1296,9 @@ def show_settings_screen():
 
     with tab4:
         show_user_management()
+
+    with tab5:
+        show_label_settings()
 
 
 def show_suppliers_list():
@@ -1414,6 +1512,34 @@ def show_google_sheets_settings():
                     st.balloons()
                 else:
                     st.error(f"❌ {result['message']}")
+
+
+def show_label_settings():
+    """Cài đặt kích thước tem QR (lưu trong session hiện tại)"""
+    ensure_label_defaults()
+    st.subheader("🖨️ Cài đặt tem QR")
+    st.info("Chọn kích thước tem (mm). Khi bấm In, trình duyệt sẽ mở hộp thoại chọn máy in/khổ giấy.")
+
+    width_val = st.number_input(
+        "Chiều rộng tem (mm)",
+        min_value=20.0,
+        max_value=120.0,
+        value=float(st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)),
+        step=1.0,
+        key="label_width_mm_input"
+    )
+    height_val = st.number_input(
+        "Chiều cao tem (mm)",
+        min_value=15.0,
+        max_value=120.0,
+        value=float(st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)),
+        step=1.0,
+        key="label_height_mm_input"
+    )
+
+    st.session_state['label_width_mm'] = width_val
+    st.session_state['label_height_mm'] = height_val
+    st.caption("Thiết lập này lưu trong phiên làm việc hiện tại. Khi in, bạn có thể chỉnh thêm trong hộp thoại in của trình duyệt.")
 
 
 # Page configuration
