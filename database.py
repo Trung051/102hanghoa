@@ -90,6 +90,34 @@ def init_database():
             is_admin BOOLEAN DEFAULT 0
         )
         ''')
+        
+        # Create TransferSlips table (Phiếu chuyển)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TransferSlips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_code TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'Đang chuyển',
+            image_url TEXT,
+            created_by TEXT NOT NULL,
+            completed_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            notes TEXT
+        )
+        ''')
+        
+        # Create TransferSlipItems table (Chi tiết máy trong phiếu chuyển)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS TransferSlipItems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_slip_id INTEGER NOT NULL,
+            shipment_id INTEGER NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (transfer_slip_id) REFERENCES TransferSlips(id),
+            FOREIGN KEY (shipment_id) REFERENCES ShipmentDetails(id),
+            UNIQUE(transfer_slip_id, shipment_id)
+        )
+        ''')
 
         # Seed default users from config
         for username, password in USERS.items():
@@ -790,6 +818,309 @@ def get_audit_log(limit=100):
     except Exception as e:
         print(f"Error getting audit log: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
+
+
+# ==================== Transfer Slips Functions ====================
+
+def create_transfer_slip(created_by, transfer_code=None):
+    """
+    Create a new transfer slip
+    
+    Args:
+        created_by: Username who created
+        transfer_code: Optional transfer code (auto-generated if None)
+        
+    Returns:
+        dict: {'success': bool, 'id': int or None, 'transfer_code': str or None, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if not transfer_code:
+            # Generate transfer code: TC + timestamp
+            transfer_code = f"TC{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        cursor.execute('''
+        INSERT INTO TransferSlips (transfer_code, created_by, status)
+        VALUES (?, ?, 'Đang chuyển')
+        ''', (transfer_code, created_by))
+        
+        transfer_id = cursor.lastrowid
+        conn.commit()
+        
+        return {'success': True, 'id': transfer_id, 'transfer_code': transfer_code, 'error': None}
+    except sqlite3.IntegrityError:
+        return {'success': False, 'id': None, 'transfer_code': None, 'error': 'Mã phiếu chuyển đã tồn tại'}
+    except Exception as e:
+        return {'success': False, 'id': None, 'transfer_code': None, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def add_shipment_to_transfer_slip(transfer_slip_id, shipment_id):
+    """
+    Add a shipment to a transfer slip
+    
+    Args:
+        transfer_slip_id: ID of transfer slip
+        shipment_id: ID of shipment
+        
+    Returns:
+        dict: {'success': bool, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+        INSERT INTO TransferSlipItems (transfer_slip_id, shipment_id)
+        VALUES (?, ?)
+        ''', (transfer_slip_id, shipment_id))
+        
+        conn.commit()
+        return {'success': True, 'error': None}
+    except sqlite3.IntegrityError:
+        return {'success': False, 'error': 'Máy đã có trong phiếu chuyển'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def get_transfer_slip(transfer_slip_id):
+    """
+    Get transfer slip details
+    
+    Args:
+        transfer_slip_id: ID of transfer slip
+        
+    Returns:
+        dict: Transfer slip details or None
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+        SELECT * FROM TransferSlips WHERE id = ?
+        ''', (transfer_slip_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            cols = [desc[0] for desc in cursor.description]
+            return dict(zip(cols, row))
+        return None
+    except Exception as e:
+        print(f"Error getting transfer slip: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_transfer_slip_items(transfer_slip_id):
+    """
+    Get all shipments in a transfer slip
+    
+    Args:
+        transfer_slip_id: ID of transfer slip
+        
+    Returns:
+        pandas.DataFrame: Shipments in transfer slip
+    """
+    conn = get_connection()
+    
+    try:
+        df = pd.read_sql_query('''
+        SELECT 
+            tsi.id,
+            tsi.shipment_id,
+            sd.qr_code,
+            sd.imei,
+            sd.device_name,
+            sd.capacity,
+            sd.status,
+            tsi.added_at
+        FROM TransferSlipItems tsi
+        JOIN ShipmentDetails sd ON tsi.shipment_id = sd.id
+        WHERE tsi.transfer_slip_id = ?
+        ORDER BY tsi.added_at ASC
+        ''', conn, params=(transfer_slip_id,))
+        
+        return df
+    except Exception as e:
+        print(f"Error getting transfer slip items: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+
+def get_active_transfer_slip(created_by):
+    """
+    Get active (incomplete) transfer slip for a user
+    
+    Args:
+        created_by: Username
+        
+    Returns:
+        dict: Transfer slip details or None
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+        SELECT * FROM TransferSlips 
+        WHERE created_by = ? AND status = 'Đang chuyển'
+        ORDER BY created_at DESC
+        LIMIT 1
+        ''', (created_by,))
+        
+        row = cursor.fetchone()
+        if row:
+            cols = [desc[0] for desc in cursor.description]
+            return dict(zip(cols, row))
+        return None
+    except Exception as e:
+        print(f"Error getting active transfer slip: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_all_transfer_slips():
+    """
+    Get all transfer slips
+    
+    Returns:
+        pandas.DataFrame: All transfer slips
+    """
+    conn = get_connection()
+    
+    try:
+        df = pd.read_sql_query('''
+        SELECT 
+            ts.id,
+            ts.transfer_code,
+            ts.status,
+            ts.created_by,
+            ts.completed_by,
+            ts.created_at,
+            ts.completed_at,
+            ts.image_url,
+            COUNT(tsi.id) as item_count
+        FROM TransferSlips ts
+        LEFT JOIN TransferSlipItems tsi ON ts.id = tsi.transfer_slip_id
+        GROUP BY ts.id
+        ORDER BY ts.created_at DESC
+        ''', conn)
+        
+        return df
+    except Exception as e:
+        print(f"Error getting all transfer slips: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+
+def update_transfer_slip(transfer_slip_id, status=None, image_url=None, completed_by=None, notes=None):
+    """
+    Update transfer slip
+    
+    Args:
+        transfer_slip_id: ID of transfer slip
+        status: New status
+        image_url: Image URL
+        completed_by: Username who completed
+        notes: Notes
+        
+    Returns:
+        dict: {'success': bool, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        updates = []
+        params = []
+        
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+        
+        if image_url:
+            updates.append("image_url = ?")
+            params.append(image_url)
+        
+        if completed_by:
+            updates.append("completed_by = ?")
+            params.append(completed_by)
+        
+        if notes:
+            updates.append("notes = ?")
+            params.append(notes)
+        
+        if status and status != 'Đang chuyển':
+            updates.append("completed_at = CURRENT_TIMESTAMP")
+        
+        if not updates:
+            return {'success': False, 'error': 'Không có thay đổi nào'}
+        
+        params.append(transfer_slip_id)
+        query = f"UPDATE TransferSlips SET {', '.join(updates)} WHERE id = ?"
+        
+        cursor.execute(query, params)
+        conn.commit()
+        
+        return {'success': True, 'error': None}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def update_transfer_slip_shipments_status(transfer_slip_id, new_status):
+    """
+    Update status of all shipments in a transfer slip
+    
+    Args:
+        transfer_slip_id: ID of transfer slip
+        new_status: New status for shipments
+        
+    Returns:
+        dict: {'success': bool, 'updated_count': int, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get all shipment IDs in this transfer slip
+        cursor.execute('''
+        SELECT shipment_id FROM TransferSlipItems WHERE transfer_slip_id = ?
+        ''', (transfer_slip_id,))
+        
+        shipment_ids = [row[0] for row in cursor.fetchall()]
+        
+        if not shipment_ids:
+            return {'success': False, 'updated_count': 0, 'error': 'Không có máy nào trong phiếu chuyển'}
+        
+        # Update status for all shipments
+        updated_count = 0
+        for shipment_id in shipment_ids:
+            cursor.execute('''
+            UPDATE ShipmentDetails 
+            SET status = ?, updated_by = (SELECT created_by FROM TransferSlips WHERE id = ?)
+            WHERE id = ?
+            ''', (new_status, transfer_slip_id, shipment_id))
+            updated_count += cursor.rowcount
+        
+        conn.commit()
+        return {'success': True, 'updated_count': updated_count, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'updated_count': 0, 'error': str(e)}
     finally:
         conn.close()
 
