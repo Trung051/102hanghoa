@@ -236,10 +236,27 @@ def render_labels_bulk(shipments):
     components.html(full_html, height=400, scrolling=True)
 
 # ----------------------- UI Helpers ----------------------- #
-def display_drive_image(image_url, width=300, caption=""):
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache 1 giờ, không hiện spinner
+def _get_drive_image_bytes(file_id):
     """
-    Display image from Google Drive - browser tự tải trực tiếp từ Drive (không qua server)
-    Không làm nặng server vì browser tự tải từ Google Drive
+    Tải ảnh từ Drive một lần và cache lại
+    Chỉ tải khi chưa có trong cache, không làm nặng server
+    """
+    try:
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        response = requests.get(download_url, timeout=10, stream=True)
+        if response.status_code == 200:
+            return response.content
+    except Exception as e:
+        print(f"Error loading image {file_id}: {e}")
+    return None
+
+
+def display_drive_image(image_url, width=300, caption="", lazy_load=True):
+    """
+    Hiển thị ảnh từ Google Drive với lazy loading
+    - lazy_load=True: Chỉ tải ảnh khi người dùng click mở (không tải tất cả cùng lúc)
+    - lazy_load=False: Tải ngay (chỉ dùng khi cần thiết)
     """
     try:
         # Extract file ID from URL
@@ -250,24 +267,39 @@ def display_drive_image(image_url, width=300, caption=""):
             file_id = image_url.split('id=')[-1].split('&')[0]
         
         if file_id:
-            # Use Google Drive view link - browser sẽ tự tải trực tiếp từ Drive
-            # Không tải về server, không làm nặng web
-            view_link = f"https://drive.google.com/uc?id={file_id}"
-            
-            # Hiển thị bằng HTML để browser tự tải
-            if caption:
-                st.markdown(f"**{caption}**")
-            
-            st.markdown(
-                f'<img src="{view_link}" width="{width}" style="border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />',
-                unsafe_allow_html=True
-            )
-            st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            if lazy_load:
+                # Lazy loading: chỉ tải khi người dùng click mở expander
+                with st.expander("📷 Xem ảnh", expanded=False):
+                    # Chỉ tải ảnh khi expander được mở
+                    image_bytes = _get_drive_image_bytes(file_id)
+                    
+                    if image_bytes:
+                        img = Image.open(BytesIO(image_bytes))
+                        st.image(img, width=width, caption=caption)
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                    else:
+                        st.warning("Không thể tải ảnh từ Drive")
+                        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+            else:
+                # Tải ngay (chỉ dùng khi thực sự cần)
+                image_bytes = _get_drive_image_bytes(file_id)
+                
+                if image_bytes:
+                    img = Image.open(BytesIO(image_bytes))
+                    st.image(img, width=width, caption=caption)
+                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
+                else:
+                    st.warning("Không thể tải ảnh từ Drive")
+                    st.markdown(f"[Mở ảnh trên Drive]({image_url})")
             return True
         else:
             # Fallback: try direct URL
-            st.image(image_url, width=width, caption=caption)
-            return True
+            try:
+                st.image(image_url, width=width, caption=caption)
+                return True
+            except:
+                st.markdown(f"[Mở ảnh]({image_url})")
+                return False
     except Exception as e:
         st.warning(f"Không thể hiển thị ảnh: {str(e)}")
         st.markdown(f"[Mở ảnh trên Drive]({image_url})")
@@ -1825,10 +1857,11 @@ def show_transfer_slip_scan(current_user):
                 st.write(f"• {row['qr_code']} - {row['device_name']}")
         
         # Show image if transfer slip has one
+        # Chỉ tải ảnh khi đang xem phiếu chuyển này
         if active_slip.get('image_url'):
             st.divider()
             st.subheader("Ảnh phiếu chuyển")
-            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển")
+            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển", lazy_load=False)
         
         st.divider()
         
@@ -1934,7 +1967,8 @@ def show_manage_transfer_slips():
                 st.write(f"**Người hoàn thành:** {slip['completed_by']}")
                 st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
             if slip['image_url']:
-                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển")
+                # Tải ảnh ngay khi xem chi tiết phiếu chuyển (không lazy load)
+                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển", lazy_load=False)
         
         st.subheader(f"Danh sách máy ({len(items_df)} máy)")
         st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
