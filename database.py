@@ -56,6 +56,10 @@ def init_database():
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN image_url TEXT")
         if "telegram_message_id" not in cols:
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN telegram_message_id INTEGER")
+        if "store_name" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN store_name TEXT")
+        if "last_updated" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         
         # Create Suppliers table
         cursor.execute('''
@@ -182,7 +186,7 @@ def init_database():
         conn.close()
 
 
-def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None):
+def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None):
     """
     Save new shipment to database
     
@@ -194,6 +198,9 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
         supplier: Supplier name
         created_by: Username who created
         notes: Optional notes
+        image_url: Optional image URL
+        status: Optional status (defaults to DEFAULT_STATUS)
+        store_name: Optional store name (for store users)
         
     Returns:
         dict: {'success': bool, 'id': int or None, 'error': str or None}
@@ -204,8 +211,8 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
     try:
         cursor.execute('''
         INSERT INTO ShipmentDetails 
-        (qr_code, imei, device_name, capacity, supplier, status, created_by, notes, image_url, telegram_message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (qr_code, imei, device_name, capacity, supplier, status, created_by, notes, image_url, telegram_message_id, store_name, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ''', (
             qr_code,
             imei,
@@ -216,7 +223,8 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             created_by,
             notes,
             image_url,
-            None
+            None,
+            store_name
         ))
         
         conn.commit()
@@ -244,7 +252,7 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
 
 def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capacity=None, 
                    supplier=None, status=None, notes=None, updated_by=None, image_url=None,
-                   telegram_message_id=None):
+                   telegram_message_id=None, store_name=None):
     """
     Update shipment information
     
@@ -258,6 +266,9 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         status: New status (optional)
         notes: New notes (optional)
         updated_by: Username who updated
+        image_url: New image URL (optional)
+        telegram_message_id: Telegram message ID (optional)
+        store_name: Store name (optional)
         
     Returns:
         dict: {'success': bool, 'error': str or None}
@@ -287,8 +298,8 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if status is not None:
             updates.append('status = ?')
             values.append(status)
-            # Set received_time if status is "Đã nhận"
-            if status == 'Đã nhận':
+            # Set received_time if status is "Đã nhận" or "Hoàn thành chuyển cửa hàng"
+            if status in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
                 updates.append('received_time = CURRENT_TIMESTAMP')
         if notes is not None:
             updates.append('notes = ?')
@@ -302,6 +313,13 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if telegram_message_id is not None:
             updates.append('telegram_message_id = ?')
             values.append(telegram_message_id)
+        if store_name is not None:
+            updates.append('store_name = ?')
+            values.append(store_name)
+        
+        # Luôn cập nhật last_updated khi có thay đổi
+        if updates:
+            updates.append('last_updated = CURRENT_TIMESTAMP')
         
         if not updates:
             return {'success': False, 'error': 'Không có thông tin để cập nhật'}
@@ -1208,6 +1226,66 @@ def clear_all_data():
     except Exception as e:
         conn.rollback()
         return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def auto_update_status_after_1hour():
+    """
+    Tự động chuyển trạng thái "Chuyển kho" → "Đang xử lý" sau 1 giờ
+    Chỉ cập nhật các phiếu có trạng thái "Chuyển kho" và last_updated cách đây >= 1 giờ
+    
+    Returns:
+        dict: {'success': bool, 'updated_count': int, 'error': str or None}
+    """
+    from config import ACTIVE_STATUSES
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Tìm các phiếu có trạng thái "Chuyển kho" và last_updated >= 1 giờ trước
+        cursor.execute('''
+        UPDATE ShipmentDetails
+        SET status = 'Đang xử lý', last_updated = CURRENT_TIMESTAMP
+        WHERE status = 'Chuyển kho'
+        AND datetime(last_updated) <= datetime('now', '-1 hour')
+        ''')
+        
+        updated_count = cursor.rowcount
+        conn.commit()
+        
+        return {'success': True, 'updated_count': updated_count, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'updated_count': 0, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def get_active_shipments():
+    """
+    Lấy danh sách phiếu đang hoạt động (chưa hoàn thành)
+    
+    Returns:
+        pandas.DataFrame: DataFrame chứa các phiếu đang hoạt động
+    """
+    from config import ACTIVE_STATUSES
+    conn = get_connection()
+    
+    try:
+        # Tạo placeholders cho IN clause
+        placeholders = ','.join(['?' for _ in ACTIVE_STATUSES])
+        query = f'''
+        SELECT * FROM ShipmentDetails
+        WHERE status IN ({placeholders})
+        ORDER BY last_updated DESC
+        '''
+        
+        df = pd.read_sql_query(query, conn, params=ACTIVE_STATUSES)
+        return df
+    except Exception as e:
+        print(f"Error getting active shipments: {e}")
+        return pd.DataFrame()
     finally:
         conn.close()
 
