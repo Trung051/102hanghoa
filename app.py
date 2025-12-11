@@ -74,13 +74,16 @@ from database import (
     init_database, save_shipment, update_shipment_status, update_shipment,
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
-    set_user_password, get_all_users
+    set_user_password, get_all_users, get_shipment_by_id,
+    create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
+    get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
+    update_transfer_slip, update_transfer_slip_shipments_status
 )
 from qr_scanner import decode_qr_from_image, parse_qr_code
 from auth import require_login, get_current_user, logout, is_admin
 from config import STATUS_VALUES
 from google_sheets import push_shipments_to_sheets, test_connection
-from drive_upload import upload_file_to_drive
+from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder
 from telegram_notify import send_text, send_photo
 from telegram_helpers import notify_shipment_if_received
 
@@ -1689,6 +1692,209 @@ def show_google_sheets_settings():
                     st.error(f"❌ {result['message']}")
 
 
+def show_transfer_slip_screen():
+    """Screen for scanning QR codes and adding to transfer slip"""
+    current_user = get_current_user()
+    st.header("Phiếu Chuyển")
+    
+    tab1, tab2 = st.tabs(["Quét & Thêm Máy", "Quản Lý Phiếu Chuyển"])
+    
+    with tab1:
+        show_transfer_slip_scan(current_user)
+    
+    with tab2:
+        show_manage_transfer_slips()
+
+
+def show_transfer_slip_scan(current_user):
+    """Screen for scanning QR codes and adding to transfer slip"""
+    # Get or create active transfer slip
+    active_slip = get_active_transfer_slip(current_user)
+    
+    if not active_slip:
+        if st.button("Tạo Phiếu Chuyển Mới", type="primary"):
+            result = create_transfer_slip(current_user)
+            if result['success']:
+                st.success(f"Đã tạo phiếu chuyển: {result['transfer_code']}")
+                st.rerun()
+            else:
+                st.error(f"Lỗi: {result['error']}")
+        return
+    
+    transfer_slip_id = active_slip['id']
+    transfer_code = active_slip['transfer_code']
+    
+    st.info(f"**Phiếu chuyển đang hoạt động:** {transfer_code}")
+    
+    # Get items in transfer slip
+    items_df = get_transfer_slip_items(transfer_slip_id)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Quét QR để thêm máy vào phiếu")
+        
+        # Camera for scanning
+        if 'show_camera_transfer' not in st.session_state:
+            st.session_state['show_camera_transfer'] = False
+        
+        if st.button("Bắt đầu quét", type="primary", key="start_scan_transfer"):
+            st.session_state['show_camera_transfer'] = True
+            st.rerun()
+        
+        if st.session_state['show_camera_transfer']:
+            if st.button("Dừng quét", key="stop_scan_transfer"):
+                st.session_state['show_camera_transfer'] = False
+                st.rerun()
+            
+            picture = st.camera_input("Quét mã QR", key="transfer_camera")
+            
+            if picture is not None:
+                with st.spinner("Đang xử lý..."):
+                    try:
+                        image = Image.open(picture)
+                        qr_text = decode_qr_from_image(image)
+                        
+                        if qr_text:
+                            parsed_data = parse_qr_code(qr_text)
+                            if parsed_data:
+                                qr_code = parsed_data['qr_code']
+                                if not qr_code.strip() and qr_text:
+                                    qr_code = qr_text.split(',')[0].strip()
+                                
+                                if qr_code.strip():
+                                    # Find shipment
+                                    shipment = get_shipment_by_qr_code(qr_code)
+                                    if shipment:
+                                        # Add to transfer slip
+                                        result = add_shipment_to_transfer_slip(transfer_slip_id, shipment['id'])
+                                        if result['success']:
+                                            st.success(f"Đã thêm máy {qr_code} vào phiếu chuyển")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Lỗi: {result['error']}")
+                                    else:
+                                        st.warning(f"Không tìm thấy phiếu với mã QR: {qr_code}")
+                    except Exception as e:
+                        st.error(f"Lỗi: {str(e)}")
+    
+    with col2:
+        st.subheader(f"Danh sách máy ({len(items_df)} máy)")
+        
+        if not items_df.empty:
+            for idx, row in items_df.iterrows():
+                st.write(f"• {row['qr_code']} - {row['device_name']}")
+        
+        st.divider()
+        
+        # Complete transfer slip
+        if len(items_df) > 0:
+            st.subheader("Hoàn thành phiếu chuyển")
+            
+            new_status = st.selectbox(
+                "Trạng thái mới cho các máy:",
+                STATUS_VALUES,
+                index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
+                key="transfer_status"
+            )
+            
+            uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
+            
+            notes = st.text_area("Ghi chú", key="transfer_notes")
+            
+            if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
+                image_url = None
+                
+                if uploaded_image is not None:
+                    with st.spinner("Đang upload ảnh..."):
+                        file_bytes = uploaded_image.getvalue()
+                        mime = uploaded_image.type or "image/jpeg"
+                        ext = uploaded_image.name.split(".")[-1] if "." in uploaded_image.name else "jpg"
+                        drive_filename = f"{transfer_code}.{ext}"
+                        upload_res = upload_file_to_transfer_folder(file_bytes, drive_filename, mime)
+                        if upload_res['success']:
+                            image_url = upload_res['url']
+                        else:
+                            st.error(f"Upload ảnh thất bại: {upload_res['error']}")
+                            st.stop()
+                
+                # Update transfer slip
+                update_result = update_transfer_slip(
+                    transfer_slip_id,
+                    status='Đã hoàn thành',
+                    image_url=image_url,
+                    completed_by=current_user,
+                    notes=notes if notes else None
+                )
+                
+                if update_result['success']:
+                    # Update all shipments status
+                    status_result = update_transfer_slip_shipments_status(transfer_slip_id, new_status)
+                    
+                    if status_result['success']:
+                        # Send Telegram notification
+                        from telegram_helpers import send_transfer_slip_notification
+                        telegram_result = send_transfer_slip_notification(transfer_slip_id)
+                        
+                        if telegram_result.get('success'):
+                            st.success("Đã hoàn thành phiếu chuyển và gửi thông báo Telegram!")
+                        else:
+                            st.warning(f"Đã hoàn thành nhưng không gửi được Telegram: {telegram_result.get('error')}")
+                        
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error(f"Lỗi cập nhật trạng thái: {status_result['error']}")
+                else:
+                    st.error(f"Lỗi: {update_result['error']}")
+
+
+def show_manage_transfer_slips():
+    """Show all transfer slips for management"""
+    st.header("Quản Lý Phiếu Chuyển")
+    
+    df = get_all_transfer_slips()
+    
+    if df.empty:
+        st.info("Chưa có phiếu chuyển nào")
+        return
+    
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        height=400
+    )
+    
+    # View details
+    selected_id = st.selectbox(
+        "Chọn phiếu chuyển để xem chi tiết:",
+        df['id'].tolist(),
+        format_func=lambda x: f"{df[df['id']==x]['transfer_code'].iloc[0]} - {df[df['id']==x]['item_count'].iloc[0]} máy"
+    )
+    
+    if selected_id:
+        slip = get_transfer_slip(selected_id)
+        items_df = get_transfer_slip_items(selected_id)
+        
+        st.subheader(f"Chi tiết phiếu: {slip['transfer_code']}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Trạng thái:** {slip['status']}")
+            st.write(f"**Người tạo:** {slip['created_by']}")
+            st.write(f"**Thời gian tạo:** {slip['created_at']}")
+        with col2:
+            if slip['completed_by']:
+                st.write(f"**Người hoàn thành:** {slip['completed_by']}")
+                st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
+            if slip['image_url']:
+                st.image(slip['image_url'], width=200)
+        
+        st.subheader(f"Danh sách máy ({len(items_df)} máy)")
+        st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
+
+
 def show_label_settings():
     """Cài đặt kích thước tem QR (lưu trong session hiện tại)"""
     ensure_label_defaults()
@@ -1752,7 +1958,7 @@ if st.sidebar.button("Đăng xuất", key="logout_btn"):
     st.rerun()
 
 # Navigation - Dashboard is homepage, only show Settings for admin
-nav_options = ["Dashboard", "Quét QR", "Quản Lý Phiếu", "Lịch Sử"]
+nav_options = ["Dashboard", "Quét QR", "Phiếu Chuyển", "Quản Lý Phiếu", "Lịch Sử"]
 if is_admin():
     nav_options.append("Cài Đặt")
 
@@ -1782,6 +1988,9 @@ if selected == "Dashboard":
 
 elif selected == "Quét QR":
     scan_qr_screen()
+
+elif selected == "Phiếu Chuyển":
+    show_transfer_slip_screen()
 
 elif selected == "Quản Lý Phiếu":
     show_manage_shipments()
