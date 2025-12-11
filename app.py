@@ -1134,6 +1134,65 @@ def show_manage_shipments():
         st.info("📭 Chưa có phiếu gửi hàng nào")
         return
     
+    # In-tem button placed above filters
+    col_print, col_push = st.columns([1, 3])
+    with col_print:
+        if st.button("🖨️ In tem (chọn phiếu)", key="open_label_picker"):
+            st.session_state['label_picker_open'] = True
+    with col_push:
+        st.write("")  # spacer
+
+    # Label picker "popup" (inline container)
+    if st.session_state.get('label_picker_open'):
+        st.markdown("### Chọn phiếu để in tem")
+        st.caption("Tìm kiếm theo mã QR/thiết bị/IMEI, chọn nhiều phiếu, sau đó bấm In.")
+        all_options = df.apply(
+            lambda r: {
+                "id": r['id'],
+                "label": f"{r['qr_code']} | {r['device_name']} | {r['imei']}"
+            },
+            axis=1
+        ).tolist()
+
+        search_term = st.text_input("Tìm mã QR / thiết bị / IMEI", key="label_search_term")
+        if search_term:
+            term = search_term.lower().strip()
+            filtered_opts = [o for o in all_options if term in o['label'].lower()]
+        else:
+            filtered_opts = all_options
+
+        option_labels = [o['label'] for o in filtered_opts]
+        option_ids = [o['id'] for o in filtered_opts]
+
+        selected_labels = st.multiselect(
+            "Chọn phiếu:",
+            options=option_labels,
+            default=st.session_state.get('label_picker_selected', []),
+            key="label_picker_multiselect"
+        )
+
+        # Persist selection
+        st.session_state['label_picker_selected'] = selected_labels
+        selected_ids = [option_ids[option_labels.index(lbl)] for lbl in selected_labels] if selected_labels else []
+
+        st.write(f"Đã chọn: {len(selected_ids)} phiếu")
+        col_lp1, col_lp2, col_lp3 = st.columns([1, 1, 2])
+        with col_lp1:
+            if st.button("🖨️ In các phiếu đã chọn", key="label_picker_print"):
+                selected_shipments = df[df['id'].isin(selected_ids)].to_dict(orient='records')
+                if selected_shipments:
+                    st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
+                    render_labels_bulk(selected_shipments)
+                else:
+                    st.warning("Chưa chọn phiếu nào để in.")
+        with col_lp2:
+            if st.button("Đóng", key="label_picker_close"):
+                st.session_state['label_picker_open'] = False
+        with col_lp3:
+            st.write("")
+
+        st.divider()
+
     with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
         col1, col2, col3 = st.columns([1, 1, 1])
         
