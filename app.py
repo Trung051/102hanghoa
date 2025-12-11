@@ -917,7 +917,8 @@ def show_manage_shipments():
     with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
         st.write("Upload file Excel với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AL=Ghi chú (Dung lượng).")
         suppliers_df = get_suppliers()
-        bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", suppliers_df['name'].tolist() if not suppliers_df.empty else [], key="bulk_supplier")
+        supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
+        bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
         uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx", "xls"], key="bulk_excel")
         if uploaded_file is not None:
             if st.button("Xử lý file", type="primary", key="bulk_process"):
@@ -951,9 +952,10 @@ def show_manage_shipments():
                                 imei=imei_val,
                                 device_name=device_val,
                                 capacity=cap_val,
-                                supplier=bulk_supplier,
+                                supplier=bulk_supplier if bulk_supplier != "Chưa chọn" else "Chưa chọn",
                                 created_by=current_user,
-                                notes=None
+                                notes=None,
+                                status="Phiếu tạm"
                             )
                             if res['success']:
                                 success += 1
