@@ -118,9 +118,29 @@ def render_label_component(shipment: dict):
     imei = shipment.get('imei', '')
     qr_code = shipment.get('qr_code', '')
 
-    html = f"""
+    html = build_label_html(qr_b64, qr_code, device_name, imei, width, height, include_print_button=True, wrapper_id="label-area")
+    components.html(html, height=220, scrolling=False)
+
+
+def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, width: float, height: float,
+                     include_print_button: bool, wrapper_id: str) -> str:
+    btn_html = ""
+    if include_print_button:
+        btn_html = """
+        <div style="margin-top:8px;">
+          <button onclick="window.print()" style="
+            background:#ef4444;
+            color:white;
+            border:none;
+            padding:8px 12px;
+            border-radius:8px;
+            cursor:pointer;
+          ">In tem</button>
+        </div>
+        """
+    return f"""
     <div style="font-family:Arial,sans-serif;">
-      <div id="label-area" style="
+      <div id="{wrapper_id}" style="
         width:{width}mm;
         height:{height}mm;
         padding:4mm;
@@ -129,6 +149,7 @@ def render_label_component(shipment: dict):
         display:flex;
         gap:6px;
         align-items:center;
+        page-break-inside: avoid;
       ">
         <div style="flex:0 0 40%;">
           <img src="data:image/png;base64,{qr_b64}" style="width:100%;height:auto;" />
@@ -139,15 +160,59 @@ def render_label_component(shipment: dict):
           <div><strong>IMEI:</strong> {imei}</div>
         </div>
       </div>
-      <div style="margin-top:8px;">
+      {btn_html}
+      <style>
+        @media print {{
+          body {{
+            margin:0;
+          }}
+          button {{
+            display:none;
+          }}
+          #{wrapper_id} {{
+            border:none;
+          }}
+        }}
+      </style>
+    </div>
+    """
+
+
+def render_labels_bulk(shipments):
+    """Render multiple labels at once and trigger a single print dialog."""
+    ensure_label_defaults()
+    width = st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)
+    height = st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)
+
+    labels_html_parts = []
+    for idx, sh in enumerate(shipments):
+        qr_b64 = generate_qr_base64(sh.get('qr_code', ''))
+        part = build_label_html(
+            qr_b64=qr_b64,
+            qr_code=sh.get('qr_code', ''),
+            device_name=sh.get('device_name', ''),
+            imei=sh.get('imei', ''),
+            width=width,
+            height=height,
+            include_print_button=False,
+            wrapper_id=f"label-{idx}"
+        )
+        labels_html_parts.append(part)
+
+    full_html = f"""
+    <div style="font-family:Arial,sans-serif;">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        {''.join(labels_html_parts)}
+      </div>
+      <div style="margin-top:12px;">
         <button onclick="window.print()" style="
           background:#ef4444;
           color:white;
           border:none;
-          padding:8px 12px;
-          border-radius:8px;
+          padding:10px 14px;
+          border-radius:10px;
           cursor:pointer;
-        ">In tem</button>
+        ">In tất cả tem đã chọn</button>
       </div>
       <style>
         @media print {{
@@ -157,14 +222,14 @@ def render_label_component(shipment: dict):
           button {{
             display:none;
           }}
-          #label-area {{
-            border:none;
+          [id^="label-"] {{
+            border:none !important;
           }}
         }}
       </style>
     </div>
     """
-    components.html(html, height=220, scrolling=False)
+    components.html(full_html, height=400, scrolling=True)
 
 # ----------------------- UI Helpers ----------------------- #
 def inject_sidebar_styles():
@@ -1117,6 +1182,30 @@ def show_manage_shipments():
     
     # Display shipments
     st.subheader(f"Tổng số: {len(filtered_df)} phiếu")
+    st.caption("Tip: Chọn nhiều phiếu để in tem hàng loạt.")
+
+    # Bulk label selection
+    options = filtered_df.apply(lambda r: (r['id'], f"{r['qr_code']} | {r['device_name']}"), axis=1).tolist()
+    option_labels = [label for (_id, label) in options]
+    option_ids = [sid for (sid, _label) in options]
+
+    selected_labels = st.multiselect(
+        "Chọn phiếu để in tem hàng loạt:",
+        options=option_labels,
+        default=[],
+        key="bulk_label_select"
+    )
+
+    selected_ids = [option_ids[option_labels.index(lbl)] for lbl in selected_labels] if selected_labels else []
+
+    if selected_ids:
+        if st.button("🖨️ In tem các phiếu đã chọn", key="bulk_print_btn"):
+            selected_shipments = filtered_df[filtered_df['id'].isin(selected_ids)].to_dict(orient='records')
+            if selected_shipments:
+                st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
+                render_labels_bulk(selected_shipments)
+            else:
+                st.warning("Không tìm thấy phiếu phù hợp để in.")
     
     for idx, row in filtered_df.iterrows():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
