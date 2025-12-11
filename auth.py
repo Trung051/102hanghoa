@@ -161,18 +161,33 @@ def is_admin():
 
 def is_store_user():
     """
-    Check if current user is a store user (cuahang1, cuahang2, etc.)
+    Check if current user is a store user.
+    First checks database flag, then falls back to username pattern.
     
     Returns:
         bool: True if user is a store user, False otherwise
     """
     username = get_current_user()
-    return username and username.startswith('cuahang')
+    if not username:
+        return False
+    
+    # Check database first
+    try:
+        from database import get_user
+        user = get_user(username)
+        if user and user.get('is_store'):
+            return True
+    except Exception as e:
+        print(f"Error checking store user from database: {e}")
+    
+    # Fallback to username pattern (for backward compatibility)
+    return username.startswith('cuahang')
 
 
 def get_store_name_from_username(username):
     """
-    Get store name from username (e.g., 'cuahang1' -> 'Cửa hàng 1')
+    Get store name from username.
+    For store users, returns formatted store name.
     
     Args:
         username: Username string
@@ -180,13 +195,23 @@ def get_store_name_from_username(username):
     Returns:
         str: Store name or None if not a store user
     """
-    if username and username.startswith('cuahang'):
+    if not username:
+        return None
+    
+    # Check if it's a store user
+    if not is_store_user():
+        return None
+    
+    # Try to get store name from database or username pattern
+    if username.startswith('cuahang'):
         try:
             store_num = username.replace('cuahang', '')
             return f"Cửa hàng {store_num}"
         except:
             return None
-    return None
+    
+    # For other store users, use username as store name
+    return username
 
 
 def require_login():
