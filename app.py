@@ -329,74 +329,6 @@ def inject_main_styles():
             }
         }
         
-        /* Dashboard metric cards styling */
-        .metric-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .metric-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-        }
-        .metric-card-blue {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .metric-card-green {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        }
-        .metric-card-orange {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        .metric-card-purple {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        .metric-card-yellow {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        }
-        .metric-card-red {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-        }
-        .metric-label {
-            font-size: 0.875rem;
-            opacity: 0.9;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-        .metric-value {
-            font-size: 2rem;
-            font-weight: 700;
-            margin: 0;
-        }
-        
-        /* Dashboard header */
-        .dashboard-header {
-            margin-bottom: 2rem;
-        }
-        .dashboard-title {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #111827;
-            margin-bottom: 0.5rem;
-        }
-        .dashboard-subtitle {
-            font-size: 1rem;
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-        }
-        
-        /* Quick actions */
-        .quick-action-btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.2s;
-            border: none;
-            cursor: pointer;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -959,26 +891,21 @@ def show_update_shipment_form(current_user, found_shipment):
 
 
 def show_dashboard():
-    """Show professional dashboard with statistics and quick actions"""
-    # Header
-    st.markdown('<div class="dashboard-header">', unsafe_allow_html=True)
-    st.markdown('<div class="dashboard-title">📊 Dashboard Quản Lý</div>', unsafe_allow_html=True)
-    st.markdown('<div class="dashboard-subtitle">Tổng quan hệ thống quản lý giao nhận hàng hóa</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    """Show simple, clean dashboard with statistics"""
+    st.title("Dashboard Quản Lý")
     
     # Get all shipments
     df = get_all_shipments()
     
     if df.empty:
-        st.info("📭 Chưa có dữ liệu phiếu gửi hàng. Bắt đầu bằng cách quét QR code hoặc tạo phiếu mới.")
-        # Quick action buttons
+        st.info("Chưa có dữ liệu phiếu gửi hàng. Bắt đầu bằng cách quét QR code hoặc tạo phiếu mới.")
         col_qa1, col_qa2 = st.columns(2)
         with col_qa1:
-            if st.button("📷 Quét QR Code", type="primary", use_container_width=True, key="qa_scan"):
+            if st.button("Quét QR Code", type="primary", use_container_width=True, key="qa_scan"):
                 st.session_state['nav'] = "Quét QR"
                 st.rerun()
         with col_qa2:
-            if st.button("➕ Tạo Phiếu Mới", use_container_width=True, key="qa_create"):
+            if st.button("Tạo Phiếu Mới", use_container_width=True, key="qa_create"):
                 st.session_state['nav'] = "Quản Lý Phiếu"
                 st.rerun()
         return
@@ -991,134 +918,77 @@ def show_dashboard():
     transfer = len(df[df['status'] == 'Chuyển kho'])
     error = len(df[df['status'].isin(['Hư hỏng', 'Mất'])])
     
-    # Calculate percentages
-    received_pct = (received / total * 100) if total > 0 else 0
-    sending_pct = (sending / total * 100) if total > 0 else 0
+    # Simple metrics layout
+    st.markdown("### Thống Kê")
     
-    # Professional metric cards with gradients
-    st.markdown("### 📈 Thống Kê Tổng Quan")
-    
-    # Row 1: Main metrics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f"""
-        <div class="metric-card metric-card-blue">
-            <div class="metric-label">Tổng Phiếu</div>
-            <div class="metric-value">{total}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.metric("Tổng Phiếu", total)
     with col2:
-        st.markdown(f"""
-        <div class="metric-card metric-card-green">
-            <div class="metric-label">Đã Nhận</div>
-            <div class="metric-value">{received}</div>
-            <div style="font-size:0.75rem; opacity:0.8; margin-top:0.25rem;">{received_pct:.1f}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.metric("Đã Nhận", received)
     with col3:
-        st.markdown(f"""
-        <div class="metric-card metric-card-orange">
-            <div class="metric-label">Đang Gửi</div>
-            <div class="metric-value">{sending}</div>
-            <div style="font-size:0.75rem; opacity:0.8; margin-top:0.25rem;">{sending_pct:.1f}%</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Đang Gửi", sending)
     
-    # Row 2: Secondary metrics
     col4, col5, col6 = st.columns(3)
     with col4:
-        st.markdown(f"""
-        <div class="metric-card metric-card-purple">
-            <div class="metric-label">Phiếu Tạm</div>
-            <div class="metric-value">{pending}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.metric("Phiếu Tạm", pending)
     with col5:
-        st.markdown(f"""
-        <div class="metric-card metric-card-yellow">
-            <div class="metric-label">Chuyển Kho</div>
-            <div class="metric-value">{transfer}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.metric("Chuyển Kho", transfer)
     with col6:
-        st.markdown(f"""
-        <div class="metric-card metric-card-red">
-            <div class="metric-label">Lỗi/Hư Hỏng</div>
-            <div class="metric-value">{error}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Lỗi/Hư Hỏng", error)
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
     
     # Quick Actions
-    st.markdown("### ⚡ Thao Tác Nhanh")
+    st.markdown("### Thao Tác Nhanh")
     col_qa1, col_qa2, col_qa3 = st.columns(3)
     with col_qa1:
-        if st.button("📷 Quét QR Code", type="primary", use_container_width=True, key="qa_scan_dash"):
+        if st.button("Quét QR Code", type="primary", use_container_width=True, key="qa_scan_dash"):
             st.session_state['nav'] = "Quét QR"
             st.rerun()
     with col_qa2:
-        if st.button("🖨️ In Tem QR", use_container_width=True, key="qa_print_dash"):
+        if st.button("In Tem QR", use_container_width=True, key="qa_print_dash"):
             st.session_state['nav'] = "Quản Lý Phiếu"
             st.rerun()
     with col_qa3:
-        if st.button("📋 Xem Tất Cả", use_container_width=True, key="qa_view_all"):
+        if st.button("Xem Tất Cả", use_container_width=True, key="qa_view_all"):
             st.session_state['nav'] = "Quản Lý Phiếu"
             st.rerun()
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
     
-    # Recent shipments preview
-    st.markdown("### 📦 Phiếu Gần Đây")
+    # Recent shipments
+    st.markdown("### Phiếu Gần Đây")
     
-    # Get recent shipments (last 10)
-    recent_df = df.nlargest(10, 'sent_time') if 'sent_time' in df.columns else df.head(10)
+    # Get recent shipments (last 10) - fix the nlargest error
+    try:
+        if 'sent_time' in df.columns:
+            # Convert to datetime if possible
+            df_copy = df.copy()
+            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+            # Sort by sent_time descending and take first 10
+            recent_df = df_copy.sort_values('sent_time', ascending=False, na_position='last').head(10)
+            # Drop the datetime column we added, keep original
+            recent_df = df.loc[recent_df.index]
+        else:
+            recent_df = df.head(10)
+    except:
+        # Fallback to simple head if any error
+        recent_df = df.head(10)
     
     if not recent_df.empty:
-        # Display as cards
-        cols_per_row = 3
-        for idx in range(0, len(recent_df), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for i, col in enumerate(cols):
-                if idx + i < len(recent_df):
-                    row = recent_df.iloc[idx + i]
-                    with col:
-                        status_colors = {
-                            'Đã nhận': '#10b981',
-                            'Đang gửi': '#f59e0b',
-                            'Phiếu tạm': '#6366f1',
-                            'Chuyển kho': '#8b5cf6',
-                            'Hư hỏng': '#ef4444',
-                            'Mất': '#ef4444'
-                        }
-                        status_color = status_colors.get(row['status'], '#6b7280')
-                        st.markdown(f"""
-                        <div style="
-                            background: white;
-                            border-left: 4px solid {status_color};
-                            padding: 1rem;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                            margin-bottom: 1rem;
-                        ">
-                            <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">
-                                {row['qr_code']}
-                            </div>
-                            <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">
-                                {row['device_name']}
-                            </div>
-                            <div style="font-size: 0.75rem; color: {status_color}; font-weight: 500;">
-                                {row['status']}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+        # Simple table display
+        display_cols = ['qr_code', 'device_name', 'status', 'supplier']
+        available_cols = [col for col in display_cols if col in recent_df.columns]
+        st.dataframe(
+            recent_df[available_cols],
+            use_container_width=True,
+            hide_index=True,
+            height=300
+        )
     
-    # Filters (collapsed)
-    with st.expander("🔍 Lọc Dữ Liệu", expanded=False):
+    # Filters and full list (collapsed)
+    with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -1142,9 +1012,10 @@ def show_dashboard():
             date_range = None
             if 'sent_time' in df.columns:
                 try:
-                    df['sent_time'] = pd.to_datetime(df['sent_time'])
-                    min_date = df['sent_time'].min().date()
-                    max_date = df['sent_time'].max().date()
+                    df_copy = df.copy()
+                    df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                    min_date = df_copy['sent_time'].min().date()
+                    max_date = df_copy['sent_time'].max().date()
                     
                     date_range = st.date_input(
                         "Khoảng thời gian:",
@@ -1155,26 +1026,27 @@ def show_dashboard():
                     )
                 except:
                     date_range = None
-    
-    # Apply filters
-    filtered_df = df[
-        (df['status'].isin(filter_status)) &
-        (df['supplier'].isin(filter_supplier))
-    ]
-    
-    # Apply date filter if available
-    if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
-        try:
-            filtered_df['sent_time'] = pd.to_datetime(filtered_df['sent_time'])
-            filtered_df = filtered_df[
-                (filtered_df['sent_time'].dt.date >= date_range[0]) &
-                (filtered_df['sent_time'].dt.date <= date_range[1])
-            ]
-        except:
-            pass
-    
-    # Full list (collapsed)
-    with st.expander(f"📋 Danh Sách Đầy Đủ ({len(filtered_df)} phiếu)", expanded=False):
+        
+        # Apply filters
+        filtered_df = df[
+            (df['status'].isin(filter_status)) &
+            (df['supplier'].isin(filter_supplier))
+        ]
+        
+        # Apply date filter if available
+        if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
+            try:
+                filtered_df_copy = filtered_df.copy()
+                filtered_df_copy['sent_time'] = pd.to_datetime(filtered_df_copy['sent_time'], errors='coerce')
+                filtered_df = filtered_df_copy[
+                    (filtered_df_copy['sent_time'].dt.date >= date_range[0]) &
+                    (filtered_df_copy['sent_time'].dt.date <= date_range[1])
+                ]
+                # Keep original columns
+                filtered_df = df.loc[filtered_df.index]
+            except:
+                pass
+        
         st.dataframe(
             filtered_df,
             use_container_width=True,
@@ -1187,7 +1059,7 @@ def show_dashboard():
         with col_exp1:
             csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
-                label="📥 Tải Excel (CSV)",
+                label="Tải Excel (CSV)",
                 data=csv,
                 file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
@@ -1195,7 +1067,7 @@ def show_dashboard():
             )
         
         with col_exp2:
-            if st.button("☁️ Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
+            if st.button("Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
                 with st.spinner("Đang push dữ liệu lên Google Sheets..."):
                     result = push_shipments_to_sheets(filtered_df, append_mode=True)
                     if result['success']:
