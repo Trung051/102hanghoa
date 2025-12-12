@@ -2,7 +2,7 @@
 Simple Telegram notification helper.
 """
 import requests
-from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from settings import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
 API_BASE = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
