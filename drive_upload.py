@@ -60,7 +60,7 @@ def upload_file_to_drive(file_bytes: bytes, filename: str, mime_type: str):
             .create(
                 body=metadata,
                 media_body=media,
-                fields="id, webViewLink, parents",
+                fields="id, webViewLink, webContentLink, parents",
                 supportsAllDrives=True,
             )
             .execute()
@@ -79,8 +79,10 @@ def upload_file_to_drive(file_bytes: bytes, filename: str, mime_type: str):
         except Exception as e:
             print(f"Warning: cannot set public permission: {e}")
 
-        # Direct download link (Telegram can fetch to show inline)
-        direct_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+        # Use direct view link for Telegram (better compatibility)
+        # Format: https://drive.google.com/uc?export=view&id=FILE_ID
+        direct_link = f"https://drive.google.com/uc?export=view&id={file_id}"
+        print(f"📤 Uploaded file to Drive: {direct_link}")
 
         return {
             "success": True,
@@ -89,6 +91,7 @@ def upload_file_to_drive(file_bytes: bytes, filename: str, mime_type: str):
             "id": file_id,
         }
     except Exception as e:
+        print(f"❌ Error uploading to Drive: {str(e)}")
         return {"success": False, "error": str(e), "url": None}
 
 
