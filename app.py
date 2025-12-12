@@ -103,8 +103,8 @@ def ensure_label_defaults():
 
 
 def generate_qr_base64(data: str) -> str:
-    """Generate a base64 PNG for a QR code."""
-    qr = qrcode.QRCode(box_size=4, border=1)
+    """Generate a base64 PNG for a QR code (larger size for better scanning)."""
+    qr = qrcode.QRCode(box_size=6, border=2)  # Increased box_size from 4 to 6, border from 1 to 2
     qr.add_data(data or "")
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
@@ -122,13 +122,17 @@ def render_label_component(shipment: dict):
     device_name = shipment.get('device_name', '')
     imei = shipment.get('imei', '')
     qr_code = shipment.get('qr_code', '')
+    capacity = shipment.get('capacity', '')
 
-    html = build_label_html(qr_b64, qr_code, device_name, imei, width, height, include_print_button=True, wrapper_id="label-area")
+    html = build_label_html(qr_b64, qr_code, device_name, imei, capacity, width, height, include_print_button=True, wrapper_id="label-area")
     components.html(html, height=220, scrolling=False)
 
 
-def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, width: float, height: float,
+def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, capacity: str, width: float, height: float,
                      include_print_button: bool, wrapper_id: str) -> str:
+    # Chỉ lấy 6 số cuối của IMEI
+    imei_short = imei[-6:] if imei and len(imei) >= 6 else imei
+    
     btn_html = ""
     if include_print_button:
         btn_html = """
@@ -148,21 +152,22 @@ def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, wid
       <div id="{wrapper_id}" style="
         width:{width}mm;
         height:{height}mm;
-        padding:4mm;
+        padding:3mm;
         box-sizing:border-box;
         border:1px dashed #d1d5db;
         display:flex;
-        gap:6px;
+        gap:4px;
         align-items:center;
         page-break-inside: avoid;
       ">
-        <div style="flex:0 0 40%;">
-          <img src="data:image/png;base64,{qr_b64}" style="width:100%;height:auto;" />
+        <div style="flex:0 0 50%;">
+          <img src="data:image/png;base64,{qr_b64}" style="width:100%;height:auto;max-width:100%;" />
         </div>
-        <div style="flex:1 1 60%; font-size:11px; line-height:1.35;">
-          <div><strong>QR:</strong> {qr_code}</div>
-          <div><strong>Thiết bị:</strong> {device_name}</div>
-          <div><strong>IMEI:</strong> {imei}</div>
+        <div style="flex:1 1 50%; font-size:9px; line-height:1.2;">
+          <div style="margin-bottom:2px;"><strong>QR:</strong> {qr_code}</div>
+          <div style="margin-bottom:2px;"><strong>TB:</strong> {device_name}</div>
+          <div style="margin-bottom:2px;"><strong>IMEI:</strong> {imei_short}</div>
+          <div><strong>Dung lượng:</strong> {capacity}</div>
         </div>
       </div>
       {btn_html}
@@ -197,6 +202,7 @@ def render_labels_bulk(shipments):
             qr_code=sh.get('qr_code', ''),
             device_name=sh.get('device_name', ''),
             imei=sh.get('imei', ''),
+            capacity=sh.get('capacity', ''),
             width=width,
             height=height,
             include_print_button=False,
