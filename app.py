@@ -167,7 +167,7 @@ def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, cap
           <div style="margin-bottom:2px;"><strong>QR:</strong> {qr_code}</div>
           <div style="margin-bottom:2px;"><strong>TB:</strong> {device_name}</div>
           <div style="margin-bottom:2px;"><strong>IMEI:</strong> {imei_short}</div>
-          <div><strong>Lỗi / Tình trạng:</strong> {capacity}</div>
+            <div><strong>Lỗi / Tình trạng:</strong> {capacity}</div>
         </div>
       </div>
       {btn_html}
@@ -672,10 +672,10 @@ def show_create_shipment_form(current_user, qr_code):
         st.session_state['form_device_name'] = device_name
         
         capacity = st.text_input(
-            "Dung lượng:",
+            "Lỗi / Tình trạng *:",
             value=st.session_state['form_capacity'],
             key="input_capacity",
-            help="Dung lượng lưu trữ (ví dụ: 128GB)"
+            help="Lỗi hoặc tình trạng thiết bị"
         )
         st.session_state['form_capacity'] = capacity
         
@@ -688,7 +688,7 @@ def show_create_shipment_form(current_user, qr_code):
         if not device_name.strip():
             empty_fields.append("Tên thiết bị")
         if not capacity.strip():
-            empty_fields.append("Dung lượng")
+            empty_fields.append("Lỗi / Tình trạng")
         
         if empty_fields:
             st.warning(f"⚠️ Các trường còn trống: {', '.join(empty_fields)}")
@@ -755,7 +755,7 @@ def show_create_shipment_form(current_user, qr_code):
             elif not device_name.strip():
                 st.error("❌ Vui lòng nhập Tên thiết bị!")
             elif not capacity.strip():
-                st.error("❌ Vui lòng nhập Dung lượng!")
+                st.error("❌ Vui lòng nhập Lỗi / Tình trạng!")
             else:
                 image_url = None
                 if uploaded_images_create:
@@ -1349,7 +1349,7 @@ def show_manage_shipments():
                         st.error(f"Lỗi: {res['error']}")
 
     with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
-        st.write("Upload file Excel (bỏ qua header, đọc từ hàng 2) với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AI=Ghi chú (Dung lượng).")
+        st.write("Upload file Excel (bỏ qua header, đọc từ hàng 2) với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AI=Ghi chú (Lỗi/Tình trạng).")
         suppliers_df = get_suppliers()
         supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
         bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
@@ -1381,7 +1381,7 @@ def show_manage_shipments():
                                 continue
                             if not imei_val or not device_val or not cap_val:
                                 fail += 1
-                                errors.append(f"Dòng {idx+1}: thiếu IMEI/Tên/Dung lượng")
+                                errors.append(f"Dòng {idx+1}: thiếu IMEI/Tên/Lỗi-Tình trạng")
                                 continue
                             # Xác định store_name nếu là user cửa hàng
                             store_user = is_store_user()
