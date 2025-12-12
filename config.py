@@ -33,6 +33,7 @@ USERS = {
 # Shipment status values - Luồng mới (yêu cầu cập nhật)
 STATUS_VALUES = [
     'Phiếu tạm',
+    'Đang gửi',  # Trạng thái mặc định khi tạo mới
     'Chuyển kho',
     'Đang xử lý',
     'Đã nhận',
@@ -48,6 +49,7 @@ STATUS_VALUES = [
 # Trạng thái được coi là "đang hoạt động" (chưa hoàn thành)
 ACTIVE_STATUSES = [
     'Phiếu tạm',
+    'Đang gửi',
     'Chuyển kho',
     'Đang xử lý',
     'Đã nhận',
