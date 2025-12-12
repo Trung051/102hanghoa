@@ -10,9 +10,14 @@ from datetime import datetime
 import pandas as pd
 
 # Ensure local modules are preferred
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
 
-from settings import DB_PATH, DEFAULT_STATUS, DEFAULT_SUPPLIERS, USERS
+# Import settings with fallback to config (for deployments missing settings.py)
+try:
+    from settings import DB_PATH, DEFAULT_STATUS, DEFAULT_SUPPLIERS, USERS  # type: ignore
+except ModuleNotFoundError:
+    from config import DB_PATH, DEFAULT_STATUS, DEFAULT_SUPPLIERS, USERS  # type: ignore
 
 
 def get_connection():
@@ -1414,7 +1419,10 @@ def get_active_shipments():
     Returns:
         pandas.DataFrame: DataFrame chứa các phiếu đang hoạt động
     """
-    from settings import ACTIVE_STATUSES
+    try:
+        from settings import ACTIVE_STATUSES  # type: ignore
+    except ModuleNotFoundError:
+        from config import ACTIVE_STATUSES  # type: ignore
     conn = get_connection()
     
     try:
