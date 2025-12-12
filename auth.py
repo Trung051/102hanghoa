@@ -8,7 +8,12 @@ import json
 import uuid
 from datetime import datetime, timedelta
 import os
-from settings import USERS
+
+# Import settings with fallback to config
+try:
+    from settings import USERS  # type: ignore
+except ModuleNotFoundError:
+    from config import USERS  # type: ignore
 from database import get_user
 
 REMEMBER_FILE = "remember_tokens.json"
