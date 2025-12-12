@@ -1952,10 +1952,9 @@ def show_user_management():
         st.info("📭 Chưa có tài khoản nào để chỉnh sửa")
         return
 
-    edit_col1, edit_col2 = st.columns([1, 1])
-    with edit_col1:
-        selected_user = st.selectbox("Chọn tài khoản", users_df['username'].tolist(), key="edit_user_select")
-    with edit_col2:
+    selected_user = st.selectbox("Chọn tài khoản", users_df['username'].tolist(), key="edit_user_select")
+    
+    with st.expander("🗑️ Xóa tài khoản", expanded=False):
         if selected_user == 'admin':
             st.info("Không thể xoá tài khoản admin.")
         delete_confirm = st.checkbox("Tôi muốn xoá tài khoản này", key="delete_user_confirm")
@@ -1972,41 +1971,42 @@ def show_user_management():
         st.error("Không lấy được thông tin tài khoản.")
         return
 
-    with st.form("edit_user_form"):
-        st.write(f"Đang chỉnh sửa: **{selected_user}**")
-        new_password = st.text_input("Mật khẩu mới (bỏ trống nếu không đổi)", type="password")
+    with st.expander(f"✏️ Chỉnh sửa tài khoản: **{selected_user}**", expanded=False):
+        with st.form("edit_user_form"):
+            st.write(f"Đang chỉnh sửa: **{selected_user}**")
+            new_password = st.text_input("Mật khẩu mới (bỏ trống nếu không đổi)", type="password")
 
-        stores_df = get_all_stores()
-        store_names = ["Không gán"] + stores_df['name'].tolist() if not stores_df.empty else ["Không gán"]
-        current_store = user_info.get('store_name') or "Không gán"
-        if current_store not in store_names:
-            store_names.append(current_store)
-        store_choice_edit = st.selectbox("Gán vào cửa hàng", store_names, index=store_names.index(current_store))
+            stores_df = get_all_stores()
+            store_names = ["Không gán"] + stores_df['name'].tolist() if not stores_df.empty else ["Không gán"]
+            current_store = user_info.get('store_name') or "Không gán"
+            if current_store not in store_names:
+                store_names.append(current_store)
+            store_choice_edit = st.selectbox("Gán vào cửa hàng", store_names, index=store_names.index(current_store))
 
-        col_flags1, col_flags2 = st.columns(2)
-        with col_flags1:
-            is_admin_flag_edit = st.checkbox("Cấp quyền admin", value=bool(user_info.get('is_admin')))
-        with col_flags2:
-            is_store_flag_edit = st.checkbox("Cấp quyền cửa hàng", value=bool(user_info.get('is_store')) or store_choice_edit != "Không gán")
-            if store_choice_edit != "Không gán" and not is_store_flag_edit:
-                st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
-                is_store_flag_edit = True
+            col_flags1, col_flags2 = st.columns(2)
+            with col_flags1:
+                is_admin_flag_edit = st.checkbox("Cấp quyền admin", value=bool(user_info.get('is_admin')))
+            with col_flags2:
+                is_store_flag_edit = st.checkbox("Cấp quyền cửa hàng", value=bool(user_info.get('is_store')) or store_choice_edit != "Không gán")
+                if store_choice_edit != "Không gán" and not is_store_flag_edit:
+                    st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
+                    is_store_flag_edit = True
 
-        if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-            pwd_to_save = new_password if new_password else user_info.get('password')
-            assigned_store = None if store_choice_edit == "Không gán" else store_choice_edit
-            res = set_user_password(
-                selected_user,
-                pwd_to_save,
-                is_admin=is_admin_flag_edit,
-                is_store=is_store_flag_edit,
-                store_name=assigned_store
-            )
-            if res['success']:
-                st.success("✅ Đã cập nhật tài khoản")
-                st.rerun()
-            else:
-                st.error(f"❌ {res['error']}")
+            if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
+                pwd_to_save = new_password if new_password else user_info.get('password')
+                assigned_store = None if store_choice_edit == "Không gán" else store_choice_edit
+                res = set_user_password(
+                    selected_user,
+                    pwd_to_save,
+                    is_admin=is_admin_flag_edit,
+                    is_store=is_store_flag_edit,
+                    store_name=assigned_store
+                )
+                if res['success']:
+                    st.success("✅ Đã cập nhật tài khoản")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {res['error']}")
 
 
 def show_database_management():
