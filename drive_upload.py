@@ -4,6 +4,7 @@ Google Drive upload helper using service account.
 import io
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -146,4 +147,54 @@ def upload_file_to_transfer_folder(file_bytes: bytes, filename: str, mime_type: 
         }
     except Exception as e:
         return {"success": False, "error": str(e), "url": None}
+
+
+def upload_multiple_files_to_drive(files_data, max_workers=5):
+    """
+    Upload multiple files to Google Drive in parallel.
+    
+    Args:
+        files_data: List of dicts with keys: 'file_bytes', 'filename', 'mime_type', 'index'
+        max_workers: Maximum number of parallel uploads (default: 5)
+    
+    Returns:
+        List of results in the same order as input, each with keys:
+        'success', 'error', 'url', 'id', 'index'
+    """
+    def upload_single_file(data):
+        """Upload a single file and return result with index"""
+        result = upload_file_to_drive(
+            data['file_bytes'],
+            data['filename'],
+            data['mime_type']
+        )
+        result['index'] = data['index']
+        return result
+    
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all upload tasks
+        future_to_data = {
+            executor.submit(upload_single_file, data): data 
+            for data in files_data
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_data):
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                data = future_to_data[future]
+                results.append({
+                    'success': False,
+                    'error': str(e),
+                    'url': None,
+                    'id': None,
+                    'index': data['index']
+                })
+    
+    # Sort results by index to maintain order
+    results.sort(key=lambda x: x['index'])
+    return results
 
