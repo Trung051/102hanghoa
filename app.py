@@ -607,7 +607,7 @@ def show_shipment_info(current_user, shipment):
                                 ext = "jpg"
                             sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            drive_filename = f"{sanitized_qr}_received_{timestamp}_{idx}.{ext}"
+                            drive_filename = f"{sanitized_qr}_received_{timestamp}_anh{idx}.{ext}"
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
@@ -676,7 +676,7 @@ def show_shipment_info(current_user, shipment):
                                 ext = "jpg"
                             sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            drive_filename = f"{sanitized_qr}_update_{timestamp}_{idx}.{ext}"
+                            drive_filename = f"{sanitized_qr}_update_{timestamp}_anh{idx}.{ext}"
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
@@ -858,7 +858,8 @@ def show_create_shipment_form(current_user, qr_code):
                         if not ext:
                             ext = "jpg"
                         sanitized_qr = qr_code.strip().replace(" ", "_") or "qr_image"
-                        drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        drive_filename = f"{sanitized_qr}_create_{timestamp}_anh{idx}.{ext}"
                         upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                         if upload_res['success']:
                             urls.append(upload_res['url'])
@@ -1411,7 +1412,8 @@ def show_manage_shipments():
                             if not ext:
                                 ext = "jpg"
                             sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
-                            drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            drive_filename = f"{sanitized_qr}_manual_{timestamp}_anh{idx}.{ext}"
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
@@ -1722,7 +1724,8 @@ def show_manage_shipments():
                                     if not ext:
                                         ext = "jpg"
                                     sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
-                                    drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    drive_filename = f"{sanitized_qr}_edit_{timestamp}_anh{idx}.{ext}"
                                     upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                                     if upload_res['success']:
                                         urls.append(upload_res['url'])
@@ -1772,7 +1775,7 @@ def show_manage_shipments():
                             del st.session_state[edit_key]
                         st.rerun()
         
-        st.divider()
+            st.divider()
 
 
 def show_settings_screen():
