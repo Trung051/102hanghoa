@@ -350,7 +350,10 @@ def sync_shipment_to_sheets(shipment_id, is_new=False):
     try:
         # Import here to avoid circular import - query database directly
         import sqlite3
-        from settings import DB_PATH
+        try:
+            from settings import DB_PATH  # type: ignore
+        except ModuleNotFoundError:
+            from config import DB_PATH  # type: ignore
         
         # Get shipment data directly from database
         conn = sqlite3.connect(DB_PATH)
