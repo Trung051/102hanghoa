@@ -2392,6 +2392,91 @@ if 'db_initialized' not in st.session_state:
 if not require_login():
     st.stop()
 
+# Add loading animation CSS and optimize performance
+st.markdown("""
+<style>
+    /* Loading overlay animation */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    @keyframes fadeIn {
+        from { 
+            opacity: 0; 
+            transform: translateY(10px); 
+        }
+        to { 
+            opacity: 1; 
+            transform: translateY(0); 
+        }
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .page-content {
+        animation: fadeIn 0.4s ease-out;
+        will-change: opacity, transform;
+    }
+    
+    .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+    }
+    
+    /* Smooth transition for navigation buttons */
+    .stButton > button {
+        transition: all 0.2s ease-in-out;
+        will-change: transform, box-shadow;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0);
+    }
+    
+    /* Optimize rendering */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Smooth transitions for expanders */
+    .streamlit-expanderHeader {
+        transition: background-color 0.2s ease;
+    }
+    
+    /* Loading state */
+    .page-loading {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+    
+    /* Prevent layout shift */
+    [data-testid="stAppViewContainer"] {
+        min-height: 100vh;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Main layout
 st.sidebar.markdown('<div class="sidebar-title">Quản Lý Giao Nhận</div>', unsafe_allow_html=True)
 
@@ -2421,27 +2506,52 @@ for opt in nav_options:
         use_container_width=True,
         key=f"nav_btn_{opt}"
     )
-    if btn:
+    if btn and not is_current:
+        # Set navigation without immediate rerun - let Streamlit handle it naturally
         st.session_state['nav'] = opt
+        st.session_state['nav_changed'] = True
         st.rerun()
 
 selected = st.session_state['nav']
 
-# Main content area - Dashboard is homepage
-if selected == "Dashboard":
-    show_dashboard()
+# Clear nav_changed flag after use
+if st.session_state.get('nav_changed', False):
+    st.session_state['nav_changed'] = False
 
-elif selected == "Quét QR":
-    scan_qr_screen()
-
-elif selected == "Phiếu Chuyển":
-    show_transfer_slip_screen()
-
-elif selected == "Quản Lý Phiếu":
-    show_manage_shipments()
-
-elif selected == "Lịch Sử":
-    show_audit_log()
-
-elif selected == "Cài Đặt":
-    show_settings_screen()
+# Main content area with loading animation wrapper
+content_container = st.container()
+with content_container:
+    # Add fade-in animation wrapper
+    st.markdown('<div class="page-content">', unsafe_allow_html=True)
+    
+    # Use try-except to handle any errors gracefully
+    try:
+        if selected == "Dashboard":
+            show_dashboard()
+        
+        elif selected == "Quét QR":
+            scan_qr_screen()
+        
+        elif selected == "Phiếu Chuyển":
+            show_transfer_slip_screen()
+        
+        elif selected == "Quản Lý Phiếu":
+            show_manage_shipments()
+        
+        elif selected == "Lịch Sử":
+            show_audit_log()
+        
+        elif selected == "Cài Đặt":
+            show_settings_screen()
+        else:
+            st.warning(f"Trang '{selected}' không tồn tại. Chuyển về Dashboard...")
+            st.session_state['nav'] = "Dashboard"
+            st.rerun()
+    except Exception as e:
+        st.error(f"Lỗi khi tải trang: {str(e)}")
+        st.info("Vui lòng thử lại hoặc làm mới trang.")
+        import traceback
+        with st.expander("Chi tiết lỗi", expanded=False):
+            st.code(traceback.format_exc())
+    
+    st.markdown('</div>', unsafe_allow_html=True)
