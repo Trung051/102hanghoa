@@ -744,7 +744,7 @@ def show_create_shipment_form(current_user, qr_code):
         )
         
         notes = st.text_area("Ghi chú:", key="notes_input")
-        uploaded_image_create = st.file_uploader("Upload ảnh (tùy chọn)", type=["png", "jpg", "jpeg"], key="upload_image_create")
+        uploaded_images_create = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_create")
         
         if st.button("💾 Lưu Phiếu", type="primary", key="save_btn"):
             # Validate required fields
@@ -758,23 +758,27 @@ def show_create_shipment_form(current_user, qr_code):
                 st.error("❌ Vui lòng nhập Dung lượng!")
             else:
                 image_url = None
-                if uploaded_image_create is not None:
-                    file_bytes = uploaded_image_create.getvalue()
-                    mime = uploaded_image_create.type or "image/jpeg"
-                    orig_name = uploaded_image_create.name or "image.jpg"
-                    ext = ""
-                    if "." in orig_name:
-                        ext = orig_name.split(".")[-1]
-                    if not ext:
-                        ext = "jpg"
-                    sanitized_qr = qr_code.strip().replace(" ", "_") or "qr_image"
-                    drive_filename = f"{sanitized_qr}.{ext}"
-                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                    if upload_res['success']:
-                        image_url = upload_res['url']
-                    else:
-                        st.error(f"❌ Upload ảnh thất bại: {upload_res['error']}")
-                        st.stop()
+                if uploaded_images_create:
+                    urls = []
+                    for idx, f in enumerate(uploaded_images_create, start=1):
+                        file_bytes = f.getvalue()
+                        mime = f.type or "image/jpeg"
+                        orig_name = f.name or "image.jpg"
+                        ext = ""
+                        if "." in orig_name:
+                            ext = orig_name.split(".")[-1]
+                        if not ext:
+                            ext = "jpg"
+                        sanitized_qr = qr_code.strip().replace(" ", "_") or "qr_image"
+                        drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                        if upload_res['success']:
+                            urls.append(upload_res['url'])
+                        else:
+                            st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                            st.stop()
+                    if urls:
+                        image_url = ";".join(urls)
 
                 # Set status mặc định: "Phiếu tạm" cho cửa hàng, "Đang gửi" cho các user khác
                 default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
@@ -992,7 +996,7 @@ def show_dashboard():
     try:
         auto_result = auto_update_status_after_1hour()
         if auto_result['success'] and auto_result['updated_count'] > 0:
-            st.info(f"🔄 Đã tự động chuyển {auto_result['updated_count']} phiếu từ 'Chuyển kho' sang 'Đang xử lý'")
+            st.info(f"🔄 Đã tự động cập nhật {auto_result['updated_count']} phiếu quá 1 giờ")
     except Exception as e:
         print(f"Error auto-updating status: {e}")
     
@@ -1123,6 +1127,27 @@ def show_dashboard():
             )
     else:
         st.info("Chưa có phiếu nào đã hoàn thành.")
+
+    # Lộ trình & lịch sử thay đổi
+    st.divider()
+    st.markdown("### Lộ trình & lịch sử trạng thái")
+    df_all = get_all_shipments()
+    if not df_all.empty:
+        selected_qr = st.selectbox("Chọn mã QR để xem lộ trình", df_all['qr_code'].tolist(), index=0)
+        shipment_row = df_all[df_all['qr_code'] == selected_qr].iloc[0].to_dict()
+        st.write(f"**Trạng thái hiện tại:** {shipment_row.get('status','')}")
+        st.write(f"**Cập nhật gần nhất:** {shipment_row.get('last_updated','')}")
+        # Audit log filtered
+        audit_df = get_audit_log()
+        if not audit_df.empty:
+            audit_df = audit_df[audit_df['shipment_id'] == shipment_row.get('id')]
+            if not audit_df.empty:
+                audit_df = audit_df[['timestamp','action','new_value','changed_by']]
+                st.dataframe(audit_df.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True, height=260)
+            else:
+                st.info("Chưa có lịch sử trạng thái cho phiếu này.")
+        else:
+            st.info("Chưa có lịch sử trạng thái.")
     
     # Filters and full list (collapsed)
     with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
@@ -1259,11 +1284,15 @@ def show_manage_shipments():
             device_name = st.text_input("Tên thiết bị *")
             capacity = st.text_input("Dung lượng *")
             suppliers_df = get_suppliers()
-            supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
-            uploaded_image_manual = st.file_uploader("Upload ảnh (tùy chọn)", type=["png", "jpg", "jpeg"], key="upload_image_manual")
+            # Nếu tài khoản cửa hàng: khóa NCC (không chọn)
+            store_user = is_store_user()
+            if store_user:
+                supplier = st.selectbox("Nhà cung cấp (khóa với cửa hàng)", ["(Cửa hàng không chọn NCC)"], index=0, disabled=True)
+            else:
+                supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
+            uploaded_image_manual = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_manual")
             
             # Trường cửa hàng
-            store_user = is_store_user()
             store_name = None
             if store_user:
                 store_name = get_store_name_from_username(current_user)
@@ -1279,28 +1308,33 @@ def show_manage_shipments():
                     st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
                 else:
                     image_url = None
-                    if uploaded_image_manual is not None:
-                        file_bytes = uploaded_image_manual.getvalue()
-                        mime = uploaded_image_manual.type or "image/jpeg"
-                        orig_name = uploaded_image_manual.name or "image.jpg"
-                        ext = ""
-                        if "." in orig_name:
-                            ext = orig_name.split(".")[-1]
-                        if not ext:
-                            ext = "jpg"
-                        sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
-                        drive_filename = f"{sanitized_qr}.{ext}"
-                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                        if upload_res['success']:
-                            image_url = upload_res['url']
-                        else:
-                            st.error(f"❌ Upload ảnh thất bại: {upload_res['error']}")
-                            st.stop()
+                    if uploaded_image_manual:
+                        urls = []
+                        for idx, f in enumerate(uploaded_image_manual, start=1):
+                            file_bytes = f.getvalue()
+                            mime = f.type or "image/jpeg"
+                            orig_name = f.name or "image.jpg"
+                            ext = ""
+                            if "." in orig_name:
+                                ext = orig_name.split(".")[-1]
+                            if not ext:
+                                ext = "jpg"
+                            sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
+                            drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                            if upload_res['success']:
+                                urls.append(upload_res['url'])
+                            else:
+                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                st.stop()
+                        if urls:
+                            image_url = ";".join(urls)
 
-                    default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
+                    # Tài khoản cửa hàng: mặc định Chuyển kho, khóa NCC
+                    default_status = 'Chuyển kho' if store_user else 'Đang gửi'
                     res = save_shipment(
                         qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
-                        supplier, current_user, notes if notes else None,
+                        supplier if not store_user else 'Cửa hàng', current_user, notes if notes else None,
                         status=default_status, store_name=store_name, image_url=image_url
                     )
                     if res['success']:
@@ -1521,8 +1555,12 @@ def show_manage_shipments():
                 if not row.get('image_url'):
                     st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
                 else:
-                    # Hiển thị ảnh với lazy loading - chỉ tải khi người dùng mở expander
-                    display_drive_image(row['image_url'], width=200, caption="Ảnh phiếu")
+                    # Hỗ trợ nhiều ảnh (phân tách bằng ';')
+                    urls = str(row.get('image_url') or '').split(';')
+                    urls = [u for u in urls if u.strip()]
+                    if urls:
+                        for i, u in enumerate(urls):
+                            display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
 
                 edit_key = f'edit_shipment_{row["id"]}'
                 is_editing = st.session_state.get(edit_key, False)
@@ -1589,7 +1627,7 @@ def show_manage_shipments():
                         )
                         
                         edit_notes = st.text_area("Ghi chú:", value=row['notes'] if pd.notna(row['notes']) else '', key=f"edit_notes_{row['id']}")
-                        uploaded_image = st.file_uploader("Upload ảnh (tùy chọn)", type=["png", "jpg", "jpeg"], key=f"upload_image_{row['id']}")
+                        uploaded_image = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_image_{row['id']}")
                     
                     col_submit1, col_submit2 = st.columns(2)
                     with col_submit1:
@@ -1597,24 +1635,27 @@ def show_manage_shipments():
                             current_user = get_current_user()
 
                             image_url = row.get('image_url')
-                            if uploaded_image is not None:
-                                file_bytes = uploaded_image.getvalue()
-                                mime = uploaded_image.type or "image/jpeg"
-                                # Đặt tên file theo Mã QR, giữ lại phần mở rộng nếu có
-                                orig_name = uploaded_image.name or "image.jpg"
-                                ext = ""
-                                if "." in orig_name:
-                                    ext = orig_name.split(".")[-1]
-                                if not ext:
-                                    ext = "jpg"
-                                sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
-                                drive_filename = f"{sanitized_qr}.{ext}"
-                                upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                if upload_res['success']:
-                                    image_url = upload_res['url']
-                                else:
-                                    st.error(f"❌ Upload ảnh thất bại: {upload_res['error']}")
-                                    st.stop()
+                            if uploaded_image:
+                                urls = []
+                                for idx, f in enumerate(uploaded_image, start=1):
+                                    file_bytes = f.getvalue()
+                                    mime = f.type or "image/jpeg"
+                                    orig_name = f.name or "image.jpg"
+                                    ext = ""
+                                    if "." in orig_name:
+                                        ext = orig_name.split(".")[-1]
+                                    if not ext:
+                                        ext = "jpg"
+                                    sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
+                                    drive_filename = f"{sanitized_qr}_{idx}.{ext}"
+                                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                    if upload_res['success']:
+                                        urls.append(upload_res['url'])
+                                    else:
+                                        st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                        st.stop()
+                                if urls:
+                                    image_url = ";".join(urls)
 
                             result = update_shipment(
                                 shipment_id=row['id'],
