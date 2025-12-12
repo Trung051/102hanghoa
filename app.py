@@ -1260,6 +1260,7 @@ def show_manage_shipments():
             capacity = st.text_input("Dung lượng *")
             suppliers_df = get_suppliers()
             supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
+            uploaded_image_manual = st.file_uploader("Upload ảnh (tùy chọn)", type=["png", "jpg", "jpeg"], key="upload_image_manual")
             
             # Trường cửa hàng
             store_user = is_store_user()
@@ -1277,14 +1278,36 @@ def show_manage_shipments():
                 if not qr or not imei or not device_name or not capacity:
                     st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
                 else:
+                    image_url = None
+                    if uploaded_image_manual is not None:
+                        file_bytes = uploaded_image_manual.getvalue()
+                        mime = uploaded_image_manual.type or "image/jpeg"
+                        orig_name = uploaded_image_manual.name or "image.jpg"
+                        ext = ""
+                        if "." in orig_name:
+                            ext = orig_name.split(".")[-1]
+                        if not ext:
+                            ext = "jpg"
+                        sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
+                        drive_filename = f"{sanitized_qr}.{ext}"
+                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                        if upload_res['success']:
+                            image_url = upload_res['url']
+                        else:
+                            st.error(f"❌ Upload ảnh thất bại: {upload_res['error']}")
+                            st.stop()
+
                     default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
                     res = save_shipment(
                         qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
                         supplier, current_user, notes if notes else None,
-                        status=default_status, store_name=store_name
+                        status=default_status, store_name=store_name, image_url=image_url
                     )
                     if res['success']:
                         st.success(f"Đã tạo phiếu #{res['id']}")
+                        # Refresh list and metrics
+                        st.session_state['label_picker_open'] = False
+                        st.rerun()
                     else:
                         st.error(f"Lỗi: {res['error']}")
 
