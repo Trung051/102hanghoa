@@ -632,10 +632,16 @@ def show_shipment_info(current_user, shipment):
                         st.success(f"✅ Đã thêm {len(quick_upload_images)} ảnh vào phiếu")
                         st.info(f"🔗 Link ảnh: {image_url[:100]}..." if len(image_url) > 100 else f"🔗 Link ảnh: {image_url}")
                     st.balloons()
-                    # Notify Telegram
-                    notify_shipment_if_received(shipment['id'], force=True)
-                    # Refresh shipment data
-                    st.session_state['found_shipment'] = get_shipment_by_qr_code(shipment['qr_code'])
+                    # Refresh shipment data first to get updated image_url
+                    updated_shipment = get_shipment_by_qr_code(shipment['qr_code'])
+                    if updated_shipment:
+                        st.session_state['found_shipment'] = updated_shipment
+                        # Notify Telegram with updated shipment data
+                        notify_shipment_if_received(
+                            updated_shipment['id'], 
+                            force=True, 
+                            is_update_image=(image_url is not None)
+                        )
                     st.rerun()
                 else:
                     st.error(f"❌ {result['error']}")
@@ -706,11 +712,17 @@ def show_shipment_info(current_user, shipment):
                         st.success(f"✅ Đã thêm {len(uploaded_images)} ảnh vào phiếu")
                         st.info(f"🔗 Link ảnh: {image_url[:100]}..." if len(image_url) > 100 else f"🔗 Link ảnh: {image_url}")
                     st.balloons()
-                    # Notify Telegram if Đã nhận
-                    if new_status == 'Đã nhận':
-                        notify_shipment_if_received(shipment['id'], force=True)
-                    # Refresh shipment data
-                    st.session_state['found_shipment'] = get_shipment_by_qr_code(shipment['qr_code'])
+                    # Refresh shipment data first to get updated image_url
+                    updated_shipment = get_shipment_by_qr_code(shipment['qr_code'])
+                    if updated_shipment:
+                        st.session_state['found_shipment'] = updated_shipment
+                        # Notify Telegram if Đã nhận
+                        if new_status == 'Đã nhận':
+                            notify_shipment_if_received(
+                                updated_shipment['id'], 
+                                force=True, 
+                                is_update_image=(image_url is not None)
+                            )
                     st.rerun()
                 else:
                     st.error(f"❌ {result['error']}")
