@@ -8,7 +8,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 import os
-from config import USERS
+from settings import USERS
 from database import get_user
 
 REMEMBER_FILE = "remember_tokens.json"
