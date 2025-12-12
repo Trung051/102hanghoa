@@ -50,25 +50,34 @@ def notify_shipment_if_received(shipment_id, force=False, is_update_image=False)
     if image_url:
         # Handle multiple images (separated by ;)
         image_urls = [url.strip() for url in image_url.split(';') if url.strip()]
+        print(f"📸 Sending {len(image_urls)} images to Telegram")
         if image_urls:
             # Send first image with caption, then send other images without caption
+            print(f"📤 Sending first image: {image_urls[0]}")
             res = send_photo(image_urls[0], message_text)
+            print(f"📤 First image result: {res}")
             if res.get('success'):
                 # Send remaining images if any
-                for img_url in image_urls[1:]:
-                    send_photo(img_url, "")
+                for idx, img_url in enumerate(image_urls[1:], 2):
+                    print(f"📤 Sending image {idx}: {img_url}")
+                    send_res = send_photo(img_url, "")
+                    print(f"📤 Image {idx} result: {send_res}")
             if not res.get('success'):
                 # Fallback: send text with link to images
+                print(f"⚠️ Photo send failed, falling back to text")
                 images_text = "\n".join([f"Ảnh {i+1}: {url}" for i, url in enumerate(image_urls)])
                 message_text = f"{message_text}\n\n{images_text}"
                 res = send_text(message_text)
+                print(f"📤 Text fallback result: {res}")
         else:
             res = send_text(message_text)
     else:
+        print(f"📤 No image URL, sending text only")
         res = send_text(message_text)
 
     if res and res.get('success') and res.get('message_id'):
         update_telegram_message(shipment_id, res['message_id'])
+        print(f"✅ Telegram message ID saved: {res['message_id']}")
 
     return res
 
