@@ -1004,6 +1004,57 @@ def get_audit_log(limit=100):
         conn.close()
 
 
+def cleanup_audit_log(max_rows=100):
+    """
+    Tự động xóa các bản ghi cũ trong AuditLog khi vượt quá max_rows
+    Giữ lại max_rows bản ghi mới nhất
+    
+    Args:
+        max_rows: Số lượng bản ghi tối đa được giữ lại (mặc định: 100)
+        
+    Returns:
+        dict: {'success': bool, 'deleted_count': int, 'error': str or None}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Đếm tổng số bản ghi
+        cursor.execute('SELECT COUNT(*) FROM AuditLog')
+        total_count = cursor.fetchone()[0]
+        
+        if total_count <= max_rows:
+            return {'success': True, 'deleted_count': 0, 'error': None}
+        
+        # Xóa các bản ghi cũ, giữ lại max_rows bản ghi mới nhất
+        # Lấy ID của max_rows bản ghi mới nhất
+        cursor.execute(f'''
+        SELECT id FROM AuditLog
+        ORDER BY timestamp DESC, id DESC
+        LIMIT {max_rows}
+        ''')
+        keep_ids = [row[0] for row in cursor.fetchall()]
+        
+        if keep_ids:
+            # Tạo placeholders cho IN clause
+            placeholders = ','.join(['?' for _ in keep_ids])
+            cursor.execute(f'''
+            DELETE FROM AuditLog
+            WHERE id NOT IN ({placeholders})
+            ''', keep_ids)
+            deleted_count = cursor.rowcount
+        else:
+            deleted_count = 0
+        
+        conn.commit()
+        return {'success': True, 'deleted_count': deleted_count, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'deleted_count': 0, 'error': str(e)}
+    finally:
+        conn.close()
+
+
 # ==================== Transfer Slips Functions ====================
 
 def create_transfer_slip(created_by, transfer_code=None):
