@@ -30,19 +30,17 @@ USERS = {
     'cuahang3': 'ch123'
 }
 
-# Shipment status values - Luồng mới
+# Shipment status values - Luồng mới (yêu cầu cập nhật)
 STATUS_VALUES = [
-    'Phiếu tạm',           # Cửa hàng tạo
-    'Chuyển kho',          # Shipper lấy
-    'Đang xử lý',          # Tự động sau 1h từ Chuyển kho
-    'Từ chối',             # Admin/Shipper từ chối
-    'Thất bại',            # Admin/Shipper đánh dấu thất bại
-    'Gửi GHN',             # Gửi + tên NCC (ví dụ)
-    'Gửi J&T',
-    'Gửi Ahamove',
-    'Nhận máy về kho',     # Shipper lấy máy từ NCC về
-    'Hoàn thành chuyển cửa hàng',  # Hoàn thành
-    'Đã nhận',             # Giữ lại cho tương thích
+    'Phiếu tạm',
+    'Chuyển kho',
+    'Đang xử lý',
+    'Đã nhận',
+    'Nhập kho',
+    'Nhập kho xử lý',
+    'Gửi NCC',
+    'Hoàn thành chuyển SR',
+    'Kết thúc',
     'Hư hỏng',
     'Mất'
 ]
@@ -52,13 +50,15 @@ ACTIVE_STATUSES = [
     'Phiếu tạm',
     'Chuyển kho',
     'Đang xử lý',
-    'Từ chối',
-    'Thất bại',
-    'Nhận máy về kho'
-] + [s for s in STATUS_VALUES if s.startswith('Gửi ')]  # Tất cả trạng thái "Gửi + NCC"
+    'Đã nhận',
+    'Nhập kho',
+    'Nhập kho xử lý',
+    'Gửi NCC',
+    'Hoàn thành chuyển SR'
+]
 
 # Trạng thái hoàn thành
-COMPLETED_STATUSES = ['Hoàn thành chuyển cửa hàng', 'Đã nhận']
+COMPLETED_STATUSES = ['Kết thúc']
 
 # Default status for new shipments
 DEFAULT_STATUS = 'Đang gửi'
