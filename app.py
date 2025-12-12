@@ -992,14 +992,6 @@ def show_dashboard():
     """Show simple, clean dashboard with statistics"""
     st.title("Dashboard Quản Lý")
     
-    # Tự động chuyển trạng thái "Chuyển kho" → "Đang xử lý" sau 1 giờ
-    try:
-        auto_result = auto_update_status_after_1hour()
-        if auto_result['success'] and auto_result['updated_count'] > 0:
-            st.info(f"🔄 Đã tự động cập nhật {auto_result['updated_count']} phiếu quá 1 giờ")
-    except Exception as e:
-        print(f"Error auto-updating status: {e}")
-    
     # Get all shipments
     df = get_all_shipments()
     
@@ -2231,12 +2223,47 @@ def show_transfer_slip_scan(current_user):
         
         st.divider()
         
-        # Complete transfer slip
+        # Batch update status for all items in transfer slip
         if len(items_df) > 0:
+            st.subheader("Cập nhật trạng thái hàng loạt")
+            
+            batch_status = st.selectbox(
+                "Trạng thái mới cho tất cả máy trong phiếu:",
+                STATUS_VALUES,
+                index=STATUS_VALUES.index('Đã nhận') if 'Đã nhận' in STATUS_VALUES else 0,
+                key="batch_status"
+            )
+            
+            if st.button("✅ Cập nhật tất cả thành 'Đã nhận'", type="primary", key="batch_receive"):
+                current_user = get_current_user()
+                success_count = 0
+                error_count = 0
+                
+                for idx, row in items_df.iterrows():
+                    result = update_shipment_status(
+                        qr_code=row['qr_code'],
+                        new_status='Đã nhận',
+                        updated_by=current_user,
+                        notes=f"Cập nhật từ phiếu chuyển {transfer_code}"
+                    )
+                    if result['success']:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                
+                if success_count > 0:
+                    st.success(f"✅ Đã cập nhật {success_count} phiếu thành 'Đã nhận'")
+                    if error_count > 0:
+                        st.warning(f"⚠️ {error_count} phiếu cập nhật thất bại")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Không thể cập nhật phiếu nào")
+            
+            st.divider()
             st.subheader("Hoàn thành phiếu chuyển")
             
             new_status = st.selectbox(
-                "Trạng thái mới cho các máy:",
+                "Trạng thái mới cho các máy khi hoàn thành:",
                 STATUS_VALUES,
                 index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
                 key="transfer_status"
@@ -2392,6 +2419,17 @@ if 'db_initialized' not in st.session_state:
 if not require_login():
     st.stop()
 
+# Auto-update status after 1 hour (run on every page load)
+try:
+    auto_result = auto_update_status_after_1hour()
+    if auto_result['success'] and auto_result['updated_count'] > 0:
+        # Store in session state to show notification once
+        if 'auto_update_count' not in st.session_state or st.session_state['auto_update_count'] != auto_result['updated_count']:
+            st.session_state['auto_update_count'] = auto_result['updated_count']
+            st.session_state['show_auto_update_notification'] = True
+except Exception as e:
+    print(f"Error auto-updating status: {e}")
+
 # Add loading animation CSS and optimize performance
 st.markdown("""
 <style>
@@ -2517,6 +2555,11 @@ selected = st.session_state['nav']
 # Clear nav_changed flag after use
 if st.session_state.get('nav_changed', False):
     st.session_state['nav_changed'] = False
+
+# Show auto-update notification if any
+if st.session_state.get('show_auto_update_notification', False):
+    st.info(f"🔄 Đã tự động cập nhật {st.session_state.get('auto_update_count', 0)} phiếu quá 1 giờ")
+    st.session_state['show_auto_update_notification'] = False
 
 # Main content area with loading animation wrapper
 content_container = st.container()
