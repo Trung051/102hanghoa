@@ -1469,7 +1469,7 @@ def show_manage_shipments():
                 if selected_shipments:
                     st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
                     render_labels_bulk(selected_shipments)
-    else:
+                else:
                     st.warning("Chưa chọn phiếu nào để in.")
         with col_lp2:
             if st.button("Đóng", key="label_picker_close"):
