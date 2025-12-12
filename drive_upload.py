@@ -81,8 +81,9 @@ def upload_file_to_drive(file_bytes: bytes, filename: str, mime_type: str):
 
         # Use direct view link for Telegram (better compatibility)
         # Format: https://drive.google.com/uc?export=view&id=FILE_ID
+        # This URL will be downloaded and sent as file to Telegram
         direct_link = f"https://drive.google.com/uc?export=view&id={file_id}"
-        print(f"📤 Uploaded file to Drive: {direct_link}")
+        print(f"📤 Uploaded file to Drive: {direct_link} (File ID: {file_id})")
 
         return {
             "success": True,
