@@ -616,23 +616,21 @@ def show_shipment_info(current_user, shipment):
                                 st.stop()
                         if urls:
                             image_url = ";".join(urls)
+                            st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
                 
-                # Build arguments for update_shipment_status
-                update_args = {
-                    'qr_code': shipment['qr_code'],
-                    'new_status': 'Đã nhận',
-                    'updated_by': current_user,
-                    'notes': None
-                }
-                if image_url:
-                    update_args['image_url'] = image_url
-                
-                result = update_shipment_status(**update_args)
+                result = update_shipment_status(
+                    qr_code=shipment['qr_code'],
+                    new_status='Đã nhận',
+                    updated_by=current_user,
+                    notes=None,
+                    image_url=image_url if image_url else None
+                )
                 
                 if result['success']:
                     st.success("✅ Đã cập nhật trạng thái thành: **Đã nhận**")
                     if image_url:
                         st.success(f"✅ Đã thêm {len(quick_upload_images)} ảnh vào phiếu")
+                        st.info(f"🔗 Link ảnh: {image_url[:100]}..." if len(image_url) > 100 else f"🔗 Link ảnh: {image_url}")
                     st.balloons()
                     # Notify Telegram
                     notify_shipment_if_received(shipment['id'], force=True)
@@ -689,18 +687,15 @@ def show_shipment_info(current_user, shipment):
                                 st.stop()
                         if urls:
                             image_url = ";".join(urls)
+                            st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
                 
-                # Build arguments for update_shipment_status
-                update_args = {
-                    'qr_code': shipment['qr_code'],
-                    'new_status': new_status,
-                    'updated_by': current_user,
-                    'notes': notes if notes else None
-                }
-                if image_url:
-                    update_args['image_url'] = image_url
-                
-                result = update_shipment_status(**update_args)
+                result = update_shipment_status(
+                    qr_code=shipment['qr_code'],
+                    new_status=new_status,
+                    updated_by=current_user,
+                    notes=notes if notes else None,
+                    image_url=image_url if image_url else None
+                )
                 
                 if result['success']:
                     if new_status != current_status:
@@ -709,6 +704,7 @@ def show_shipment_info(current_user, shipment):
                         st.success("✅ Đã cập nhật phiếu thành công!")
                     if image_url:
                         st.success(f"✅ Đã thêm {len(uploaded_images)} ảnh vào phiếu")
+                        st.info(f"🔗 Link ảnh: {image_url[:100]}..." if len(image_url) > 100 else f"🔗 Link ảnh: {image_url}")
                     st.balloons()
                     # Notify Telegram if Đã nhận
                     if new_status == 'Đã nhận':
