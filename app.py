@@ -85,7 +85,7 @@ try:
 except ModuleNotFoundError:
     from config import STATUS_VALUES  # type: ignore
 from google_sheets import push_shipments_to_sheets, test_connection
-from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder
+from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder, upload_multiple_files_to_drive
 from telegram_notify import send_text, send_photo
 from telegram_helpers import notify_shipment_if_received
 
@@ -594,8 +594,11 @@ def show_shipment_info(current_user, shipment):
                 # Upload images if provided
                 image_url = None
                 if quick_upload_images:
-                    with st.spinner("Đang upload ảnh lên Google Drive..."):
-                        urls = []
+                    with st.spinner(f"Đang upload {len(quick_upload_images)} ảnh lên Google Drive (song song)..."):
+                        # Prepare files data for parallel upload
+                        sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        files_data = []
                         for idx, f in enumerate(quick_upload_images, start=1):
                             file_bytes = f.getvalue()
                             mime = f.type or "image/jpeg"
@@ -605,22 +608,36 @@ def show_shipment_info(current_user, shipment):
                                 ext = orig_name.split(".")[-1]
                             if not ext:
                                 ext = "jpg"
-                            sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                             drive_filename = f"{sanitized_qr}_received_{timestamp}_anh{idx}.{ext}"
-                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                            if upload_res['success']:
-                                urls.append(upload_res['url'])
-                                st.success(f"✅ Upload ảnh {idx} thành công")
-                                print(f"✅ Upload ảnh {idx} thành công: {upload_res['url']}")
+                            files_data.append({
+                                'file_bytes': file_bytes,
+                                'filename': drive_filename,
+                                'mime_type': mime,
+                                'index': idx
+                            })
+                        
+                        # Upload all files in parallel
+                        upload_results = upload_multiple_files_to_drive(files_data, max_workers=5)
+                        
+                        # Process results
+                        urls = []
+                        success_count = 0
+                        for result in upload_results:
+                            if result['success']:
+                                urls.append(result['url'])
+                                success_count += 1
+                                print(f"✅ Upload ảnh {result['index']} thành công: {result['url']}")
                             else:
-                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                print(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                st.stop()
+                                st.error(f"❌ Upload ảnh {result['index']} thất bại: {result['error']}")
+                                print(f"❌ Upload ảnh {result['index']} thất bại: {result['error']}")
+                        
                         if urls:
                             image_url = ";".join(urls)
-                            st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
+                            st.success(f"📸 Đã upload {success_count}/{len(quick_upload_images)} ảnh lên Drive")
                             print(f"📸 Image URLs: {image_url}")
+                        else:
+                            st.error("❌ Không có ảnh nào được upload thành công!")
+                            st.stop()
                 
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
@@ -695,8 +712,11 @@ def show_shipment_info(current_user, shipment):
                 # Upload images if provided
                 image_url = None
                 if uploaded_images:
-                    with st.spinner("Đang upload ảnh lên Google Drive..."):
-                        urls = []
+                    with st.spinner(f"Đang upload {len(uploaded_images)} ảnh lên Google Drive (song song)..."):
+                        # Prepare files data for parallel upload
+                        sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        files_data = []
                         for idx, f in enumerate(uploaded_images, start=1):
                             file_bytes = f.getvalue()
                             mime = f.type or "image/jpeg"
@@ -706,22 +726,36 @@ def show_shipment_info(current_user, shipment):
                                 ext = orig_name.split(".")[-1]
                             if not ext:
                                 ext = "jpg"
-                            sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                             drive_filename = f"{sanitized_qr}_update_{timestamp}_anh{idx}.{ext}"
-                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                            if upload_res['success']:
-                                urls.append(upload_res['url'])
-                                st.success(f"✅ Upload ảnh {idx} thành công")
-                                print(f"✅ Upload ảnh {idx} thành công: {upload_res['url']}")
+                            files_data.append({
+                                'file_bytes': file_bytes,
+                                'filename': drive_filename,
+                                'mime_type': mime,
+                                'index': idx
+                            })
+                        
+                        # Upload all files in parallel
+                        upload_results = upload_multiple_files_to_drive(files_data, max_workers=5)
+                        
+                        # Process results
+                        urls = []
+                        success_count = 0
+                        for result in upload_results:
+                            if result['success']:
+                                urls.append(result['url'])
+                                success_count += 1
+                                print(f"✅ Upload ảnh {result['index']} thành công: {result['url']}")
                             else:
-                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                print(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                st.stop()
+                                st.error(f"❌ Upload ảnh {result['index']} thất bại: {result['error']}")
+                                print(f"❌ Upload ảnh {result['index']} thất bại: {result['error']}")
+                        
                         if urls:
                             image_url = ";".join(urls)
-                            st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
+                            st.success(f"📸 Đã upload {success_count}/{len(uploaded_images)} ảnh lên Drive")
                             print(f"📸 Image URLs: {image_url}")
+                        else:
+                            st.error("❌ Không có ảnh nào được upload thành công!")
+                            st.stop()
                 
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
@@ -1299,16 +1333,16 @@ def show_dashboard():
     # Filters and full list (collapsed)
     with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
         col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        filter_status = st.multiselect(
+            "Trạng thái:",
+            STATUS_VALUES,
+            default=STATUS_VALUES,
+            key="dash_filter_status"
+        )
         
-        with col1:
-            filter_status = st.multiselect(
-                "Trạng thái:",
-                STATUS_VALUES,
-                default=STATUS_VALUES,
-                key="dash_filter_status"
-            )
-        
-        with col2:
+    with col2:
             suppliers_list = df['supplier'].unique().tolist()
             filter_supplier = st.multiselect(
                 "Nhà cung cấp:",
@@ -1317,33 +1351,33 @@ def show_dashboard():
                 key="dash_filter_supplier"
             )
         
-        with col3:
-            date_range = None
-            if 'sent_time' in df.columns:
-                try:
-                    df_copy = df.copy()
-                    df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                    min_date = df_copy['sent_time'].min().date()
-                    max_date = df_copy['sent_time'].max().date()
-                    
-                    date_range = st.date_input(
-                        "Khoảng thời gian:",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                        key="dash_date_range"
-                    )
-                except:
-                    date_range = None
-        
-        # Apply filters
-        filtered_df = df[
-            (df['status'].isin(filter_status)) &
-            (df['supplier'].isin(filter_supplier))
-        ]
-        
-        # Apply date filter if available
-        if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
+    with col3:
+        date_range = None
+        if 'sent_time' in df.columns:
+            try:
+                df_copy = df.copy()
+                df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                min_date = df_copy['sent_time'].min().date()
+                max_date = df_copy['sent_time'].max().date()
+                
+                date_range = st.date_input(
+                    "Khoảng thời gian:",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date,
+                    key="dash_date_range"
+                )
+            except:
+                date_range = None
+    
+    # Apply filters
+    filtered_df = df[
+        (df['status'].isin(filter_status)) &
+        (df['supplier'].isin(filter_supplier))
+    ]
+    
+    # Apply date filter if available
+    if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
             try:
                 filtered_df_copy = filtered_df.copy()
                 filtered_df_copy['sent_time'] = pd.to_datetime(filtered_df_copy['sent_time'], errors='coerce')
@@ -1355,27 +1389,27 @@ def show_dashboard():
                 filtered_df = df.loc[filtered_df.index]
             except:
                 pass
-        
-        st.dataframe(
-            filtered_df,
-            use_container_width=True,
-            height=400,
-            hide_index=True
+    
+    st.dataframe(
+        filtered_df,
+        use_container_width=True,
+        height=400,
+        hide_index=True
+    )
+    
+    # Export buttons
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="Tải Excel (CSV)",
+            data=csv,
+            file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
         )
-        
-        # Export buttons
-        col_exp1, col_exp2 = st.columns(2)
-        with col_exp1:
-            csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="Tải Excel (CSV)",
-                data=csv,
-                file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp2:
+    
+    with col_exp2:
             if st.button("Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
                 with st.spinner("Đang push dữ liệu lên Google Sheets..."):
                     result = push_shipments_to_sheets(filtered_df, append_mode=True)
@@ -1772,65 +1806,65 @@ def show_manage_shipments():
                 
                 col_submit1, col_submit2 = st.columns(2)
                 with col_submit1:
-                        if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-                            current_user = get_current_user()
+                    if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
+                        current_user = get_current_user()
 
-                            image_url = row.get('image_url')
-                            if uploaded_image:
-                                urls = []
-                                for idx, f in enumerate(uploaded_image, start=1):
-                                    file_bytes = f.getvalue()
-                                    mime = f.type or "image/jpeg"
-                                    orig_name = f.name or "image.jpg"
-                                    ext = ""
-                                    if "." in orig_name:
-                                        ext = orig_name.split(".")[-1]
-                                    if not ext:
-                                        ext = "jpg"
-                                    sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    drive_filename = f"{sanitized_qr}_edit_{timestamp}_anh{idx}.{ext}"
-                                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                    if upload_res['success']:
-                                        urls.append(upload_res['url'])
-                                    else:
-                                        st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                        st.stop()
-                                if urls:
-                                    image_url = ";".join(urls)
+                        image_url = row.get('image_url')
+                        if uploaded_image:
+                            urls = []
+                            for idx, f in enumerate(uploaded_image, start=1):
+                                file_bytes = f.getvalue()
+                                mime = f.type or "image/jpeg"
+                                orig_name = f.name or "image.jpg"
+                                ext = ""
+                                if "." in orig_name:
+                                    ext = orig_name.split(".")[-1]
+                                if not ext:
+                                    ext = "jpg"
+                                sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                drive_filename = f"{sanitized_qr}_edit_{timestamp}_anh{idx}.{ext}"
+                                upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                if upload_res['success']:
+                                    urls.append(upload_res['url'])
+                                else:
+                                    st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                    st.stop()
+                            if urls:
+                                image_url = ";".join(urls)
 
-                            result = update_shipment(
-                                shipment_id=row['id'],
-                                qr_code=edit_qr_code.strip(),
-                                imei=edit_imei.strip(),
-                                device_name=edit_device_name.strip(),
-                                capacity=edit_capacity.strip(),
-                                supplier=edit_supplier,
-                                status=edit_status,
-                                notes=edit_notes.strip() if edit_notes.strip() else None,
-                                updated_by=current_user,
-                                image_url=image_url,
-                                store_name=edit_store_name.strip() if edit_store_name.strip() else None
-                            )
-                            
-                            if result['success']:
-                                st.success("✅ Đã cập nhật thành công!")
-                                # Notify Telegram if status is Đã nhận hoặc Hoàn thành chuyển cửa hàng
-                                updated = get_shipment_by_qr_code(edit_qr_code.strip())
-                                if updated and updated.get('status') in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
-                                    res = notify_shipment_if_received(
-                                        updated['id'],
-                                        force=not row.get('telegram_message_id'),
-                                        is_update_image=(uploaded_image is not None)
-                                    )
-                                    if res and not res.get('success'):
-                                        st.warning(f"Không gửi được Telegram: {res.get('error')}")
-                                edit_key = f'edit_shipment_{row["id"]}'
-                                if edit_key in st.session_state:
-                                    del st.session_state[edit_key]
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {result['error']}")
+                        result = update_shipment(
+                            shipment_id=row['id'],
+                            qr_code=edit_qr_code.strip(),
+                            imei=edit_imei.strip(),
+                            device_name=edit_device_name.strip(),
+                            capacity=edit_capacity.strip(),
+                            supplier=edit_supplier,
+                            status=edit_status,
+                            notes=edit_notes.strip() if edit_notes.strip() else None,
+                            updated_by=current_user,
+                            image_url=image_url,
+                            store_name=edit_store_name.strip() if edit_store_name.strip() else None
+                        )
+                        
+                        if result['success']:
+                            st.success("✅ Đã cập nhật thành công!")
+                            # Notify Telegram if status is Đã nhận hoặc Hoàn thành chuyển cửa hàng
+                            updated = get_shipment_by_qr_code(edit_qr_code.strip())
+                            if updated and updated.get('status') in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
+                                res = notify_shipment_if_received(
+                                    updated['id'],
+                                    force=not row.get('telegram_message_id'),
+                                    is_update_image=(uploaded_image is not None)
+                                )
+                                if res and not res.get('success'):
+                                    st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                            edit_key = f'edit_shipment_{row["id"]}'
+                            if edit_key in st.session_state:
+                                del st.session_state[edit_key]
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result['error']}")
                 
                 with col_submit2:
                     if st.form_submit_button("❌ Hủy"):
@@ -2407,21 +2441,21 @@ def show_transfer_slip_scan(current_user):
                 else:
                     st.error(f"❌ Không thể cập nhật phiếu nào")
 
-        st.divider()
-        st.subheader("Hoàn thành phiếu chuyển")
-        
-        new_status = st.selectbox(
-            "Trạng thái mới cho các máy khi hoàn thành:",
-            STATUS_VALUES,
-            index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
-            key="transfer_status"
-        )
-        
-        uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
-        
-        notes = st.text_area("Ghi chú", key="transfer_notes")
-        
-        if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
+    st.divider()
+    st.subheader("Hoàn thành phiếu chuyển")
+    
+    new_status = st.selectbox(
+        "Trạng thái mới cho các máy khi hoàn thành:",
+        STATUS_VALUES,
+        index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
+        key="transfer_status"
+    )
+    
+    uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
+    
+    notes = st.text_area("Ghi chú", key="transfer_notes")
+    
+    if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
                 image_url = None
                 
                 if uploaded_image is not None:
