@@ -2,7 +2,10 @@
 Simple Telegram notification helper.
 """
 import requests
-from settings import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+try:
+    from settings import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # type: ignore
+except ModuleNotFoundError:
+    from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID  # type: ignore
 
 API_BASE = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
