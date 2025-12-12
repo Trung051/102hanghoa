@@ -32,6 +32,50 @@ except ImportError:  # pragma: no cover - optional deps
 
 DB_PATH = "shipment.db"
 
+# Trạng thái hiển thị theo luồng (giữ nguyên giá trị gốc, chỉ đổi giao diện)
+STATUS_FLOW = [
+    "Đang gửi",
+    "Phiếu tạm",
+    "Chuyển kho",
+    "Đang xử lý",
+    "Đã nhận",
+    "Nhập kho",
+    "Nhập kho xử lý",
+    "Gửi NCC",
+    "Hoàn thành chuyển SR",
+    "Kết thúc",
+    "Hư hỏng",
+    "Mất",
+]
+
+# Mô tả ngắn cho từng trạng thái
+STATUS_DESCRIPTIONS = {
+    "Đang gửi": "Phiếu đã được tạo và đang chờ xử lý.",
+    "Phiếu tạm": "Phiếu đang ở trạng thái nháp/tạm.",
+    "Chuyển kho": "Đơn hàng đang trên đường di chuyển giữa các kho.",
+    "Đang xử lý": "Đơn hàng đang được phân loại/xử lý tại kho.",
+    "Đã nhận": "Kho đã nhận hàng, chờ các bước tiếp theo.",
+    "Nhập kho": "Hàng đã nhập kho.",
+    "Nhập kho xử lý": "Hàng đang được xử lý trong kho.",
+    "Gửi NCC": "Hàng đã gửi đến nhà cung cấp.",
+    "Hoàn thành chuyển SR": "Đã hoàn thành chuyển cửa hàng/SR.",
+    "Kết thúc": "Đơn hàng đã hoàn tất/giao thành công.",
+    "Hư hỏng": "Đơn gặp vấn đề hư hỏng.",
+    "Mất": "Đơn hàng thất lạc, cần xử lý.",
+}
+
+# Nhãn hiển thị kiểu Shopee (chỉ đổi text trình bày)
+STATUS_ALIASES = {
+    "Kết thúc": "Đã giao",
+    "Đã nhận": "Đã giao",
+    "Chuyển kho": "Đang vận chuyển",
+    "Đang xử lý": "Đang phân loại",
+    "Nhập kho": "Đang nhập kho",
+    "Nhập kho xử lý": "Đang nhập kho",
+    "Gửi NCC": "Gửi nhà cung cấp",
+    "Phiếu tạm": "Chờ xác nhận",
+}
+
 
 st.set_page_config(
     page_title="Quản Lý Giao Nhận",
@@ -440,6 +484,90 @@ st.markdown(
         .status-error {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
+        }
+
+        /* Shopee-style status card + timeline (UI only, không đổi trạng thái gốc) */
+        .shopee-status-card {
+            background: linear-gradient(120deg, rgba(99,102,241,0.15), rgba(139,92,246,0.08));
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            margin: 0.5rem 0 1rem 0;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        .shopee-status-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .shopee-status-desc {
+            color: var(--text-secondary);
+            margin: 0.35rem 0 0 0;
+            font-size: 0.95rem;
+        }
+        .status-timeline {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+            margin: 1rem 0 1.5rem 0;
+        }
+        .timeline-step {
+            position: relative;
+            flex: 1;
+            text-align: center;
+            min-width: 80px;
+        }
+        .timeline-step .step-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            margin: 0 auto;
+            border: 3px solid var(--border);
+            background: var(--bg-card);
+            z-index: 2;
+        }
+        .timeline-step.done .step-dot {
+            background: var(--success);
+            border-color: var(--success);
+        }
+        .timeline-step.current .step-dot {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 6px rgba(99,102,241,0.15);
+        }
+        .timeline-step.upcoming .step-dot {
+            background: var(--bg-secondary);
+            border-color: var(--border);
+        }
+        .timeline-step .step-connector {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            width: 100%;
+            height: 3px;
+            background: var(--border);
+            z-index: 1;
+        }
+        .timeline-step.done .step-connector {
+            background: linear-gradient(90deg, var(--success) 0%, var(--success) 60%, var(--border) 100%);
+        }
+        .timeline-step.current .step-connector {
+            background: linear-gradient(90deg, var(--primary) 0%, var(--border) 100%);
+        }
+        .timeline-step:last-child .step-connector {
+            display: none;
+        }
+        .timeline-step .step-label {
+            margin-top: 0.5rem;
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .timeline-step .step-sub {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.15rem;
         }
         
         /* Form Container */
@@ -1345,6 +1473,64 @@ def show_statistics() -> None:
         )
 
 
+def get_status_display(status: str) -> Tuple[str, str]:
+    """Trả về (nhãn hiển thị kiểu Shopee, mô tả) cho trạng thái."""
+    display = STATUS_ALIASES.get(status, status)
+    desc = STATUS_DESCRIPTIONS.get(status, "Đơn hàng đang được xử lý.")
+    return display, desc
+
+
+def build_status_steps(history_statuses: List[str], current_status: str) -> List[str]:
+    """Tạo danh sách step theo flow, chỉ cho những trạng thái đã xuất hiện + hiện tại."""
+    seen = set()
+    steps: List[str] = []
+    target_statuses = history_statuses + [current_status]
+    for status in STATUS_FLOW:
+        if status in target_statuses and status not in seen:
+            steps.append(status)
+            seen.add(status)
+    if not steps:
+        steps.append(current_status or "Đang gửi")
+    return steps
+
+
+def render_shopee_status_card(current_status: str) -> None:
+    label, desc = get_status_display(current_status)
+    st.markdown(
+        f"""
+        <div class="shopee-status-card">
+            <p class="shopee-status-title">{label}</p>
+            <p class="shopee-status-desc">{desc}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_status_timeline(history_statuses: List[str], current_status: str) -> None:
+    steps = build_status_steps(history_statuses, current_status)
+    try:
+        active_idx = steps.index(current_status)
+    except ValueError:
+        active_idx = len(steps) - 1
+
+    timeline_html = '<div class="status-timeline">'
+    for idx, status in enumerate(steps):
+        state_class = "current" if idx == active_idx else "done" if idx < active_idx else "upcoming"
+        label, desc = get_status_display(status)
+        connector = '<div class="step-connector"></div>' if idx < len(steps) - 1 else ""
+        timeline_html += f"""
+            <div class="timeline-step {state_class}">
+                <div class="step-dot"></div>
+                {connector}
+                <div class="step-label">{label}</div>
+                <div class="step-sub">{desc}</div>
+            </div>
+        """
+    timeline_html += "</div>"
+    st.markdown(timeline_html, unsafe_allow_html=True)
+
+
 def render_recent_shipments(limit: int = 10) -> None:
     df = get_all_shipments().head(limit)
     if df.empty:
@@ -1621,6 +1807,57 @@ def page_receive():
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+def page_tracking():
+    st.markdown("### Lộ Trình & Lịch Sử Trạng Thái")
+    shipments = get_all_shipments()
+
+    if shipments.empty:
+        st.info("Chưa có phiếu nào để theo dõi.")
+        return
+
+    qr_options = ["Chọn mã QR..."] + shipments["qr_code"].tolist()
+    selected_qr = st.selectbox("Chọn mã QR để xem lộ trình", qr_options)
+    if selected_qr == "Chọn mã QR...":
+        return
+
+    shipment_row = shipments[shipments["qr_code"] == selected_qr]
+    if shipment_row.empty:
+        st.warning("Không tìm thấy phiếu tương ứng.")
+        return
+
+    shipment = shipment_row.iloc[0]
+    current_status = shipment.get("status", "Đang gửi")
+
+    st.markdown(
+        f"**Trạng thái hiện tại:** <span class='status-badge status-pending'>{current_status}</span>",
+        unsafe_allow_html=True,
+    )
+    render_shopee_status_card(current_status)
+
+    history_df = get_shipment_history(int(shipment["id"]))
+    history_statuses = [
+        row["new_value"]
+        for _, row in history_df.iterrows()
+        if isinstance(row.get("new_value"), str) and row["new_value"]
+    ]
+    render_status_timeline(history_statuses, current_status)
+
+    st.markdown("#### Cập nhật gần nhất")
+    if history_df.empty:
+        st.info("Chưa có lịch sử thay đổi.")
+    else:
+        display_history = history_df.rename(
+            columns={
+                "timestamp": "Thời gian",
+                "action": "Hành động",
+                "new_value": "Trạng thái mới",
+                "old_value": "Trạng thái cũ",
+                "user_action": "Người thực hiện",
+            }
+        )
+        st.dataframe(display_history, use_container_width=True)
+
+
 def page_dashboard():
     st.markdown("### Dashboard Phân Tích")
     
@@ -1870,7 +2107,13 @@ def main():
         
         page = st.radio(
             "Chọn chức năng:",
-            ["🏠 Trang Chủ", "📱 Quét QR Gửi", "📥 Tiếp Nhận Hàng", "📊 Dashboard"],
+            [
+                "🏠 Trang Chủ",
+                "📱 Quét QR Gửi",
+                "📥 Tiếp Nhận Hàng",
+                "🚚 Lộ Trình",
+                "📊 Dashboard",
+            ],
             label_visibility="collapsed",
         )
         
@@ -1891,6 +2134,8 @@ def main():
         page_send()
     elif "Tiếp Nhận Hàng" in page or "📥" in page:
         page_receive()
+    elif "Lộ Trình" in page or "🚚" in page:
+        page_tracking()
     elif "Dashboard" in page or "📊" in page:
         page_dashboard()
 
