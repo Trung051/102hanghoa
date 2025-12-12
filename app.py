@@ -1466,6 +1466,7 @@ def show_manage_shipments():
         with col_lp2:
             if st.button("Đóng", key="label_picker_close"):
                 st.session_state['label_picker_open'] = False
+                st.rerun()
         with col_lp3:
             st.write("")
 
