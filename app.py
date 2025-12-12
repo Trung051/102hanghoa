@@ -171,7 +171,7 @@ def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, cap
         </div>
       </div>
       {btn_html}
-      <style>
+    <style>
         @media print {{
           body {{
             margin:0;
@@ -556,6 +556,17 @@ def show_shipment_info(current_user, shipment):
         if shipment['notes']:
             st.write(f"**Ghi chú:** {shipment['notes']}")
         
+        # Display existing images if any
+        if shipment.get('image_url'):
+            st.write("### Ảnh Đính Kèm")
+            image_urls = shipment['image_url'].split(';')
+            for idx, img_url in enumerate(image_urls, 1):
+                if img_url.strip():
+                    try:
+                        st.image(img_url.strip(), width=300, caption=f"Ảnh {idx}")
+                    except:
+                        st.markdown(f"[Mở ảnh {idx}]({img_url.strip()})")
+        
         # Button to scan again
         if st.button("🔄 Quét lại QR code", key="rescan_btn"):
             st.session_state['found_shipment'] = None
@@ -571,16 +582,53 @@ def show_shipment_info(current_user, shipment):
         
         # Only show "Đã nhận" button if not yet received
         if current_status != 'Đã nhận':
+            # Quick upload images for "Đã nhận" button
+            quick_upload_images = st.file_uploader(
+                "📷 Thêm ảnh khi đánh dấu 'Đã nhận' (tùy chọn)", 
+                type=["png", "jpg", "jpeg"], 
+                accept_multiple_files=True, 
+                key="upload_image_quick_received"
+            )
+            
             if st.button("✅ Đã Nhận", type="primary", key="mark_received_btn"):
+                # Upload images if provided
+                image_url = None
+                if quick_upload_images:
+                    with st.spinner("Đang upload ảnh lên Google Drive..."):
+                        urls = []
+                        for idx, f in enumerate(quick_upload_images, start=1):
+                            file_bytes = f.getvalue()
+                            mime = f.type or "image/jpeg"
+                            orig_name = f.name or "image.jpg"
+                            ext = ""
+                            if "." in orig_name:
+                                ext = orig_name.split(".")[-1]
+                            if not ext:
+                                ext = "jpg"
+                            sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            drive_filename = f"{sanitized_qr}_received_{timestamp}_{idx}.{ext}"
+                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                            if upload_res['success']:
+                                urls.append(upload_res['url'])
+                            else:
+                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                st.stop()
+                        if urls:
+                            image_url = ";".join(urls)
+                
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
                     new_status='Đã nhận',
                     updated_by=current_user,
-                    notes=None
+                    notes=None,
+                    image_url=image_url
                 )
                 
                 if result['success']:
                     st.success("✅ Đã cập nhật trạng thái thành: **Đã nhận**")
+                    if image_url:
+                        st.success(f"✅ Đã thêm {len(quick_upload_images)} ảnh vào phiếu")
                     st.balloons()
                     # Notify Telegram
                     notify_shipment_if_received(shipment['id'], force=True)
@@ -602,17 +650,57 @@ def show_shipment_info(current_user, shipment):
         
         notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
         
+        # Upload images
+        uploaded_images = st.file_uploader(
+            "📷 Thêm ảnh (tùy chọn, chọn nhiều)", 
+            type=["png", "jpg", "jpeg"], 
+            accept_multiple_files=True, 
+            key="upload_image_qr_update"
+        )
+        
         if st.button("🔄 Cập Nhật", key="update_status_btn"):
-            if new_status != current_status:
+            if new_status != current_status or uploaded_images or notes:
+                # Upload images if provided
+                image_url = None
+                if uploaded_images:
+                    with st.spinner("Đang upload ảnh lên Google Drive..."):
+                        urls = []
+                        for idx, f in enumerate(uploaded_images, start=1):
+                            file_bytes = f.getvalue()
+                            mime = f.type or "image/jpeg"
+                            orig_name = f.name or "image.jpg"
+                            ext = ""
+                            if "." in orig_name:
+                                ext = orig_name.split(".")[-1]
+                            if not ext:
+                                ext = "jpg"
+                            sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            drive_filename = f"{sanitized_qr}_update_{timestamp}_{idx}.{ext}"
+                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                            if upload_res['success']:
+                                urls.append(upload_res['url'])
+                            else:
+                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                st.stop()
+                        if urls:
+                            image_url = ";".join(urls)
+                
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
                     new_status=new_status,
                     updated_by=current_user,
-                    notes=notes if notes else None
+                    notes=notes if notes else None,
+                    image_url=image_url
                 )
                 
                 if result['success']:
-                    st.success(f"✅ Đã cập nhật trạng thái thành: **{new_status}**")
+                    if new_status != current_status:
+                        st.success(f"✅ Đã cập nhật trạng thái thành: **{new_status}**")
+                    else:
+                        st.success("✅ Đã cập nhật phiếu thành công!")
+                    if image_url:
+                        st.success(f"✅ Đã thêm {len(uploaded_images)} ảnh vào phiếu")
                     st.balloons()
                     # Notify Telegram if Đã nhận
                     if new_status == 'Đã nhận':
@@ -623,7 +711,7 @@ def show_shipment_info(current_user, shipment):
                 else:
                     st.error(f"❌ {result['error']}")
             else:
-                st.warning("⚠️ Vui lòng chọn trạng thái khác với trạng thái hiện tại!")
+                st.warning("⚠️ Vui lòng thay đổi trạng thái, thêm ảnh hoặc ghi chú để cập nhật!")
 
 
 def show_create_shipment_form(current_user, qr_code):
@@ -1466,7 +1554,7 @@ def show_manage_shipments():
 
     with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
         col1, col2, col3 = st.columns([1, 1, 1])
-        
+    
         with col1:
             filter_status = st.multiselect(
                 "Trạng thái:",
@@ -1503,8 +1591,8 @@ def show_manage_shipments():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
             col1, col2 = st.columns([2, 1])
             
-        with col1:
-            st.write("**Thông tin phiếu:**")
+            with col1:
+                st.write("**Thông tin phiếu:**")
             info_col1, info_col2 = st.columns(2)
             
             with info_col1:
@@ -1543,12 +1631,12 @@ def show_manage_shipments():
             if not row.get('image_url'):
                 st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
             else:
-                    # Hỗ trợ nhiều ảnh (phân tách bằng ';')
-                    urls = str(row.get('image_url') or '').split(';')
-                    urls = [u for u in urls if u.strip()]
-                    if urls:
-                        for i, u in enumerate(urls):
-                            display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
+                # Hỗ trợ nhiều ảnh (phân tách bằng ';')
+                urls = str(row.get('image_url') or '').split(';')
+                urls = [u for u in urls if u.strip()]
+                if urls:
+                    for i, u in enumerate(urls):
+                        display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
 
             edit_key = f'edit_shipment_{row["id"]}'
             is_editing = st.session_state.get(edit_key, False)
@@ -1559,65 +1647,65 @@ def show_manage_shipments():
         
         # Edit form
         if st.session_state.get(edit_key, False):
-                st.divider()
-                st.write("### ✏️ Chỉnh Sửa Phiếu")
+            st.divider()
+            st.write("### ✏️ Chỉnh Sửa Phiếu")
+            
+            with st.form(f"edit_shipment_form_{row['id']}"):
+                col_form1, col_form2 = st.columns(2)
                 
-                with st.form(f"edit_shipment_form_{row['id']}"):
-                    col_form1, col_form2 = st.columns(2)
+                with col_form1:
+                    edit_qr_code = st.text_input("Mã QR Code:", value=row['qr_code'], key=f"edit_qr_{row['id']}")
+                    edit_imei = st.text_input("IMEI:", value=row['imei'], key=f"edit_imei_{row['id']}")
+                    edit_device_name = st.text_input("Tên thiết bị:", value=row['device_name'], key=f"edit_device_{row['id']}")
+                    edit_capacity = st.text_input("Lỗi / Tình trạng:", value=row['capacity'], key=f"edit_capacity_{row['id']}")
+                
+                with col_form2:
+                    suppliers_df = get_suppliers()
+                    current_supplier_idx = 0
+                    if suppliers_df['name'].tolist():
+                        try:
+                            current_supplier_idx = suppliers_df['name'].tolist().index(row['supplier'])
+                        except:
+                            pass
                     
-                    with col_form1:
-                        edit_qr_code = st.text_input("Mã QR Code:", value=row['qr_code'], key=f"edit_qr_{row['id']}")
-                        edit_imei = st.text_input("IMEI:", value=row['imei'], key=f"edit_imei_{row['id']}")
-                        edit_device_name = st.text_input("Tên thiết bị:", value=row['device_name'], key=f"edit_device_{row['id']}")
-                        edit_capacity = st.text_input("Lỗi / Tình trạng:", value=row['capacity'], key=f"edit_capacity_{row['id']}")
+                    edit_supplier = st.selectbox(
+                        "Nhà cung cấp:",
+                        suppliers_df['name'].tolist(),
+                        index=current_supplier_idx,
+                        key=f"edit_supplier_{row['id']}"
+                    )
                     
-                    with col_form2:
-                        suppliers_df = get_suppliers()
-                        current_supplier_idx = 0
-                        if suppliers_df['name'].tolist():
-                            try:
-                                current_supplier_idx = suppliers_df['name'].tolist().index(row['supplier'])
-                            except:
-                                pass
-                        
-                        edit_supplier = st.selectbox(
-                            "Nhà cung cấp:",
-                            suppliers_df['name'].tolist(),
-                            index=current_supplier_idx,
-                            key=f"edit_supplier_{row['id']}"
-                        )
-                        
-                        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
-                        status_options = STATUS_VALUES.copy()
-                        for _, supplier_row in suppliers_df.iterrows():
-                            supplier_name = supplier_row['name']
-                            send_status = f"Gửi {supplier_name}"
-                            if send_status not in status_options:
-                                status_options.append(send_status)
-                        
-                        current_status_idx = 0
-                        if row['status'] in status_options:
-                            current_status_idx = status_options.index(row['status'])
-                        
-                        edit_status = st.selectbox(
-                            "Trạng thái:",
-                            status_options,
-                            index=current_status_idx,
-                            key=f"edit_status_{row['id']}"
-                        )
-                        
-                        edit_store_name = st.text_input(
-                            "Cửa hàng:",
-                            value=row.get('store_name', '') if pd.notna(row.get('store_name')) else '',
-                            key=f"edit_store_{row['id']}",
-                            help="Tên cửa hàng (nếu có)"
-                        )
-                        
-                        edit_notes = st.text_area("Ghi chú:", value=row['notes'] if pd.notna(row['notes']) else '', key=f"edit_notes_{row['id']}")
-                        uploaded_image = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_image_{row['id']}")
+                    # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
+                    status_options = STATUS_VALUES.copy()
+                    for _, supplier_row in suppliers_df.iterrows():
+                        supplier_name = supplier_row['name']
+                        send_status = f"Gửi {supplier_name}"
+                        if send_status not in status_options:
+                            status_options.append(send_status)
                     
-                    col_submit1, col_submit2 = st.columns(2)
-                    with col_submit1:
+                    current_status_idx = 0
+                    if row['status'] in status_options:
+                        current_status_idx = status_options.index(row['status'])
+                    
+                    edit_status = st.selectbox(
+                        "Trạng thái:",
+                        status_options,
+                        index=current_status_idx,
+                        key=f"edit_status_{row['id']}"
+                    )
+                    
+                    edit_store_name = st.text_input(
+                        "Cửa hàng:",
+                        value=row.get('store_name', '') if pd.notna(row.get('store_name')) else '',
+                        key=f"edit_store_{row['id']}",
+                        help="Tên cửa hàng (nếu có)"
+                    )
+                    
+                    edit_notes = st.text_area("Ghi chú:", value=row['notes'] if pd.notna(row['notes']) else '', key=f"edit_notes_{row['id']}")
+                    uploaded_image = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_image_{row['id']}")
+                
+                col_submit1, col_submit2 = st.columns(2)
+                with col_submit1:
                         if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
                             current_user = get_current_user()
 
@@ -1676,13 +1764,13 @@ def show_manage_shipments():
                                 st.rerun()
                             else:
                                 st.error(f"❌ {result['error']}")
-                    
-                    with col_submit2:
-                        if st.form_submit_button("❌ Hủy"):
-                            edit_key = f'edit_shipment_{row["id"]}'
-                            if edit_key in st.session_state:
-                                del st.session_state[edit_key]
-                            st.rerun()
+                
+                with col_submit2:
+                    if st.form_submit_button("❌ Hủy"):
+                        edit_key = f'edit_shipment_{row["id"]}'
+                        if edit_key in st.session_state:
+                            del st.session_state[edit_key]
+                        st.rerun()
         
         st.divider()
 
@@ -1793,7 +1881,7 @@ def show_suppliers_list():
                     with col_submit2:
                         if st.form_submit_button("❌ Hủy"):
                             st.session_state[f'edit_supplier_{row["id"]}'] = False
-                            st.rerun()
+            st.rerun()
         
         st.divider()
 
@@ -1886,7 +1974,7 @@ def show_user_management():
                 st.error("❌ Vui lòng nhập mật khẩu")
             elif password != confirm:
                 st.error("❌ Mật khẩu nhập lại không khớp")
-            else:
+        else:
                 assigned_store = None if store_choice == "Không gán" else store_choice
                 result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, assigned_store)
                 if result['success']:
@@ -1949,7 +2037,7 @@ def show_user_management():
     if not user_info:
         st.error("Không lấy được thông tin tài khoản.")
         return
-
+        
     with st.expander(f"✏️ Chỉnh sửa tài khoản: **{selected_user}**", expanded=False):
         with st.form("edit_user_form"):
             st.write(f"Đang chỉnh sửa: **{selected_user}**")
@@ -2050,9 +2138,9 @@ def show_database_management():
                     for key in list(st.session_state.keys()):
                         if key != 'username':  # Giữ lại thông tin đăng nhập
                             del st.session_state[key]
-                    st.rerun()
-                else:
-                    st.error(f"❌ Lỗi khi xóa database: {result['error']}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Lỗi khi xóa database: {result['error']}")
     else:
         if confirm_text:
             st.warning("Vui lòng nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận")
@@ -2251,22 +2339,22 @@ def show_transfer_slip_scan(current_user):
                     st.rerun()
                 else:
                     st.error(f"❌ Không thể cập nhật phiếu nào")
-            
-            st.divider()
-            st.subheader("Hoàn thành phiếu chuyển")
-            
-            new_status = st.selectbox(
-                "Trạng thái mới cho các máy khi hoàn thành:",
-                STATUS_VALUES,
-                index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
-                key="transfer_status"
-            )
-            
-            uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
-            
-            notes = st.text_area("Ghi chú", key="transfer_notes")
-            
-            if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
+
+        st.divider()
+        st.subheader("Hoàn thành phiếu chuyển")
+        
+        new_status = st.selectbox(
+            "Trạng thái mới cho các máy khi hoàn thành:",
+            STATUS_VALUES,
+            index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
+            key="transfer_status"
+        )
+        
+        uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
+        
+        notes = st.text_area("Ghi chú", key="transfer_notes")
+        
+        if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
                 image_url = None
                 
                 if uploaded_image is not None:
@@ -2325,7 +2413,7 @@ def show_manage_transfer_slips():
     
     st.dataframe(
         df,
-        use_container_width=True,
+            use_container_width=True,
         hide_index=True,
         height=400
     )
