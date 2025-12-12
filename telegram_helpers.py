@@ -13,7 +13,7 @@ def _format_shipment_text(shipment, is_update_image=False):
         f"QR: {shipment.get('qr_code','')}\n"
         f"IMEI: {shipment.get('imei','')}\n"
         f"Thiết bị: {shipment.get('device_name','')}\n"
-        f"Dung lượng: {shipment.get('capacity','')}\n"
+        f"Lỗi / Tình trạng: {shipment.get('capacity','')}\n"
         f"NCC: {shipment.get('supplier','')}\n"
         f"Trạng thái: {shipment.get('status','')}\n"
         f"Thời gian gửi: {sent_time}\n"
@@ -48,15 +48,26 @@ def notify_shipment_if_received(shipment_id, force=False, is_update_image=False)
     # Try photo first if available; fallback to text if photo fails or no image
     res = None
     if image_url:
-        res = send_photo(image_url, message_text)
-        if not res.get('success'):
-            # Fallback: send text with link to image
-            message_text = f"{message_text}\nẢnh: {image_url}"
+        # Handle multiple images (separated by ;)
+        image_urls = [url.strip() for url in image_url.split(';') if url.strip()]
+        if image_urls:
+            # Send first image with caption, then send other images without caption
+            res = send_photo(image_urls[0], message_text)
+            if res.get('success'):
+                # Send remaining images if any
+                for img_url in image_urls[1:]:
+                    send_photo(img_url, "")
+            if not res.get('success'):
+                # Fallback: send text with link to images
+                images_text = "\n".join([f"Ảnh {i+1}: {url}" for i, url in enumerate(image_urls)])
+                message_text = f"{message_text}\n\n{images_text}"
+                res = send_text(message_text)
+        else:
             res = send_text(message_text)
     else:
         res = send_text(message_text)
 
-    if res.get('success') and res.get('message_id'):
+    if res and res.get('success') and res.get('message_id'):
         update_telegram_message(shipment_id, res['message_id'])
 
     return res
