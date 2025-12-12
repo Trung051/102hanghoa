@@ -76,7 +76,7 @@ from database import (
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
     update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
-    auto_update_status_after_1hour, get_active_shipments
+    auto_update_status_after_1hour, get_active_shipments, cleanup_audit_log
 )
 from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
@@ -1237,6 +1237,14 @@ def show_dashboard():
 def show_audit_log():
     """Show audit log of all changes"""
     st.header("📋 Lịch Sử Thay Đổi")
+    
+    # Tự động xóa các bản ghi cũ khi vượt quá 100
+    try:
+        cleanup_result = cleanup_audit_log(max_rows=100)
+        if cleanup_result['success'] and cleanup_result['deleted_count'] > 0:
+            st.info(f"🗑️ Đã tự động xóa {cleanup_result['deleted_count']} bản ghi cũ (giữ lại 100 bản ghi mới nhất)")
+    except Exception as e:
+        print(f"Error cleaning up audit log: {e}")
     
     # Get audit log
     limit = st.slider("Số lượng bản ghi:", 10, 500, 100, 10)
