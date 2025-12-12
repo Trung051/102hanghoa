@@ -642,15 +642,16 @@ def show_shipment_info(current_user, shipment):
                         st.session_state['found_shipment'] = updated_shipment
                         # Notify Telegram with updated shipment data
                         if image_url:
-                            with st.spinner("Đang gửi ảnh lên Telegram..."):
-                                print(f"📤 Gửi Telegram với ảnh: {updated_shipment.get('image_url', 'N/A')}")
+                            num_images = len(quick_upload_images) if quick_upload_images else len(image_url.split(';')) if image_url else 0
+                            with st.spinner(f"Đang gửi {num_images} ảnh lên Telegram..."):
+                                print(f"📤 Gửi Telegram với {num_images} ảnh: {updated_shipment.get('image_url', 'N/A')}")
                                 telegram_result = notify_shipment_if_received(
                                     updated_shipment['id'], 
                                     force=True, 
                                     is_update_image=True
                                 )
                                 if telegram_result and telegram_result.get('success'):
-                                    st.success("✅ Đã gửi ảnh lên Telegram")
+                                    st.success(f"✅ Đã gửi {num_images} ảnh lên Telegram")
                                     print(f"✅ Telegram gửi thành công: {telegram_result}")
                                 elif telegram_result:
                                     st.warning(f"⚠️ Gửi Telegram: {telegram_result.get('error', 'Lỗi không xác định')}")
