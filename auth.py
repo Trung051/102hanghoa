@@ -202,7 +202,15 @@ def get_store_name_from_username(username):
     if not is_store_user():
         return None
     
-    # Try to get store name from database or username pattern
+    # Try DB first
+    try:
+        user = get_user(username)
+        if user and user.get('store_name'):
+            return user.get('store_name')
+    except Exception:
+        pass
+    
+    # Fallback to username pattern
     if username.startswith('cuahang'):
         try:
             store_num = username.replace('cuahang', '')
