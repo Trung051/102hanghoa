@@ -611,12 +611,16 @@ def show_shipment_info(current_user, shipment):
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
+                                st.success(f"✅ Upload ảnh {idx} thành công")
+                                print(f"✅ Upload ảnh {idx} thành công: {upload_res['url']}")
                             else:
                                 st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                print(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
                                 st.stop()
                         if urls:
                             image_url = ";".join(urls)
                             st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
+                            print(f"📸 Image URLs: {image_url}")
                 
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
@@ -637,11 +641,30 @@ def show_shipment_info(current_user, shipment):
                     if updated_shipment:
                         st.session_state['found_shipment'] = updated_shipment
                         # Notify Telegram with updated shipment data
-                        notify_shipment_if_received(
-                            updated_shipment['id'], 
-                            force=True, 
-                            is_update_image=(image_url is not None)
-                        )
+                        if image_url:
+                            with st.spinner("Đang gửi ảnh lên Telegram..."):
+                                print(f"📤 Gửi Telegram với ảnh: {updated_shipment.get('image_url', 'N/A')}")
+                                telegram_result = notify_shipment_if_received(
+                                    updated_shipment['id'], 
+                                    force=True, 
+                                    is_update_image=True
+                                )
+                                if telegram_result and telegram_result.get('success'):
+                                    st.success("✅ Đã gửi ảnh lên Telegram")
+                                    print(f"✅ Telegram gửi thành công: {telegram_result}")
+                                elif telegram_result:
+                                    st.warning(f"⚠️ Gửi Telegram: {telegram_result.get('error', 'Lỗi không xác định')}")
+                                    print(f"❌ Telegram lỗi: {telegram_result.get('error', 'Lỗi không xác định')}")
+                                else:
+                                    st.warning("⚠️ Không nhận được phản hồi từ Telegram")
+                                    print("❌ Telegram không trả về kết quả")
+                        else:
+                            print(f"📤 Gửi Telegram không có ảnh")
+                            notify_shipment_if_received(
+                                updated_shipment['id'], 
+                                force=True, 
+                                is_update_image=False
+                            )
                     st.rerun()
                 else:
                     st.error(f"❌ {result['error']}")
@@ -688,12 +711,16 @@ def show_shipment_info(current_user, shipment):
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
+                                st.success(f"✅ Upload ảnh {idx} thành công")
+                                print(f"✅ Upload ảnh {idx} thành công: {upload_res['url']}")
                             else:
                                 st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                print(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
                                 st.stop()
                         if urls:
                             image_url = ";".join(urls)
                             st.info(f"📸 Đã upload {len(urls)} ảnh lên Drive")
+                            print(f"📸 Image URLs: {image_url}")
                 
                 result = update_shipment_status(
                     qr_code=shipment['qr_code'],
@@ -718,11 +745,30 @@ def show_shipment_info(current_user, shipment):
                         st.session_state['found_shipment'] = updated_shipment
                         # Notify Telegram if Đã nhận
                         if new_status == 'Đã nhận':
-                            notify_shipment_if_received(
-                                updated_shipment['id'], 
-                                force=True, 
-                                is_update_image=(image_url is not None)
-                            )
+                            if image_url:
+                                with st.spinner("Đang gửi ảnh lên Telegram..."):
+                                    print(f"📤 Gửi Telegram với ảnh: {updated_shipment.get('image_url', 'N/A')}")
+                                    telegram_result = notify_shipment_if_received(
+                                        updated_shipment['id'], 
+                                        force=True, 
+                                        is_update_image=True
+                                    )
+                                    if telegram_result and telegram_result.get('success'):
+                                        st.success("✅ Đã gửi ảnh lên Telegram")
+                                        print(f"✅ Telegram gửi thành công: {telegram_result}")
+                                    elif telegram_result:
+                                        st.warning(f"⚠️ Gửi Telegram: {telegram_result.get('error', 'Lỗi không xác định')}")
+                                        print(f"❌ Telegram lỗi: {telegram_result.get('error', 'Lỗi không xác định')}")
+                                    else:
+                                        st.warning("⚠️ Không nhận được phản hồi từ Telegram")
+                                        print("❌ Telegram không trả về kết quả")
+                            else:
+                                print(f"📤 Gửi Telegram không có ảnh")
+                                notify_shipment_if_received(
+                                    updated_shipment['id'], 
+                                    force=True, 
+                                    is_update_image=False
+                                )
                     st.rerun()
                 else:
                     st.error(f"❌ {result['error']}")
@@ -1433,6 +1479,7 @@ def show_manage_shipments():
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
+                                st.success(f"✅ Upload ảnh {idx} thành công: {upload_res['url'][:50]}...")
                             else:
                                 st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
                                 st.stop()
