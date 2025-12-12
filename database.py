@@ -391,7 +391,7 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         conn.close()
 
 
-def update_shipment_status(qr_code, new_status, updated_by, notes=None):
+def update_shipment_status(qr_code, new_status, updated_by, notes=None, image_url=None):
     """
     Update shipment status
     
@@ -400,6 +400,7 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None):
         new_status: New status value
         updated_by: Username who updated
         notes: Optional notes
+        image_url: Optional image URL (can append to existing images)
         
     Returns:
         dict: {'success': bool, 'error': str or None}
@@ -410,14 +411,14 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None):
     try:
         # Get current shipment data
         cursor.execute('''
-        SELECT id, status FROM ShipmentDetails WHERE qr_code = ?
+        SELECT id, status, image_url FROM ShipmentDetails WHERE qr_code = ?
         ''', (qr_code,))
         result = cursor.fetchone()
         
         if not result:
             return {'success': False, 'error': 'Phiếu không tồn tại'}
         
-        shipment_id, old_status = result
+        shipment_id, old_status, current_image_url = result
         
         # Update status
         update_fields = {
@@ -433,6 +434,15 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None):
         # Update notes if provided
         if notes:
             update_fields['notes'] = notes
+        
+        # Handle image_url: append to existing if both exist, otherwise use new or keep existing
+        if image_url:
+            if current_image_url:
+                # Append new images to existing ones
+                update_fields['image_url'] = f"{current_image_url};{image_url}"
+            else:
+                # Set new image URL
+                update_fields['image_url'] = image_url
         
         # Handle last_updated separately (SQL function)
         fields_without_timestamp = {k: v for k, v in update_fields.items() if k != 'last_updated'}
