@@ -1335,7 +1335,6 @@ def show_manage_shipments():
                     if res['success']:
                         st.success(f"Đã tạo phiếu #{res['id']}")
                         # Refresh list and metrics
-                        st.session_state['label_picker_open'] = False
                         st.rerun()
                     else:
                         st.error(f"Lỗi: {res['error']}")
@@ -1412,17 +1411,8 @@ def show_manage_shipments():
         st.info("📭 Chưa có phiếu gửi hàng nào")
         return
     
-    # In-tem button placed above filters
-    col_print, col_push = st.columns([1, 3])
-    with col_print:
-        if st.button("🖨️ In tem (chọn phiếu)", key="open_label_picker"):
-            st.session_state['label_picker_open'] = True
-    with col_push:
-        st.write("")  # spacer
-
-    # Label picker "popup" (inline container)
-    if st.session_state.get('label_picker_open'):
-        st.markdown("### Chọn phiếu để in tem")
+    # In-tem expander (giống như Tạo nhiều phiếu từ Excel)
+    with st.expander("🖨️ In tem (chọn phiếu)", expanded=False):
         st.caption("Tìm kiếm theo mã QR/thiết bị/IMEI, chọn nhiều phiếu, sau đó bấm In.")
         all_options = df.apply(
             lambda r: {
@@ -1454,9 +1444,9 @@ def show_manage_shipments():
         selected_ids = [option_ids[option_labels.index(lbl)] for lbl in selected_labels] if selected_labels else []
 
         st.write(f"Đã chọn: {len(selected_ids)} phiếu")
-        col_lp1, col_lp2, col_lp3 = st.columns([1, 1, 2])
+        col_lp1, col_lp2 = st.columns([1, 3])
         with col_lp1:
-            if st.button("🖨️ In các phiếu đã chọn", key="label_picker_print"):
+            if st.button("🖨️ In các phiếu đã chọn", key="label_picker_print", use_container_width=True):
                 selected_shipments = df[df['id'].isin(selected_ids)].to_dict(orient='records')
                 if selected_shipments:
                     st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
@@ -1464,13 +1454,7 @@ def show_manage_shipments():
                 else:
                     st.warning("Chưa chọn phiếu nào để in.")
         with col_lp2:
-            if st.button("Đóng", key="label_picker_close"):
-                st.session_state['label_picker_open'] = False
-                st.rerun()
-        with col_lp3:
-            st.write("")
-
-        st.divider()
+            st.write("")  # spacer
 
     with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
         col1, col2, col3 = st.columns([1, 1, 1])
