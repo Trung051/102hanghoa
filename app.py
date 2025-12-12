@@ -617,13 +617,17 @@ def show_shipment_info(current_user, shipment):
                         if urls:
                             image_url = ";".join(urls)
                 
-                result = update_shipment_status(
-                    qr_code=shipment['qr_code'],
-                    new_status='Đã nhận',
-                    updated_by=current_user,
-                    notes=None,
-                    image_url=image_url
-                )
+                # Build arguments for update_shipment_status
+                update_args = {
+                    'qr_code': shipment['qr_code'],
+                    'new_status': 'Đã nhận',
+                    'updated_by': current_user,
+                    'notes': None
+                }
+                if image_url:
+                    update_args['image_url'] = image_url
+                
+                result = update_shipment_status(**update_args)
                 
                 if result['success']:
                     st.success("✅ Đã cập nhật trạng thái thành: **Đã nhận**")
@@ -686,13 +690,17 @@ def show_shipment_info(current_user, shipment):
                         if urls:
                             image_url = ";".join(urls)
                 
-                result = update_shipment_status(
-                    qr_code=shipment['qr_code'],
-                    new_status=new_status,
-                    updated_by=current_user,
-                    notes=notes if notes else None,
-                    image_url=image_url
-                )
+                # Build arguments for update_shipment_status
+                update_args = {
+                    'qr_code': shipment['qr_code'],
+                    'new_status': new_status,
+                    'updated_by': current_user,
+                    'notes': notes if notes else None
+                }
+                if image_url:
+                    update_args['image_url'] = image_url
+                
+                result = update_shipment_status(**update_args)
                 
                 if result['success']:
                     if new_status != current_status:
