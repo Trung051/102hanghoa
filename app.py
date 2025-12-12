@@ -84,7 +84,7 @@ from database import (
 )
 from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
-from config import STATUS_VALUES
+from settings import STATUS_VALUES
 from google_sheets import push_shipments_to_sheets, test_connection
 from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder
 from telegram_notify import send_text, send_photo
@@ -1018,7 +1018,7 @@ def show_dashboard():
         return
     
     # Calculate metrics
-    from config import ACTIVE_STATUSES, COMPLETED_STATUSES
+    from settings import ACTIVE_STATUSES, COMPLETED_STATUSES
     total = len(df)
     active_df = get_active_shipments()
     active_count = len(active_df)
