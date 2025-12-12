@@ -1282,7 +1282,7 @@ def show_manage_shipments():
             qr = st.text_input("Mã QR Code *")
             imei = st.text_input("IMEI *")
             device_name = st.text_input("Tên thiết bị *")
-            capacity = st.text_input("Dung lượng *")
+            capacity = st.text_input("Lỗi / Tình trạng *")
             suppliers_df = get_suppliers()
             # Nếu tài khoản cửa hàng: khóa NCC (không chọn)
             store_user = is_store_user()
@@ -1305,7 +1305,7 @@ def show_manage_shipments():
             notes = st.text_area("Ghi chú")
             if st.form_submit_button("💾 Lưu phiếu mới", type="primary"):
                 if not qr or not imei or not device_name or not capacity:
-                    st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
+                    st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Lỗi/Tình trạng")
                 else:
                     image_url = None
                     if uploaded_image_manual:
