@@ -1518,7 +1518,7 @@ def show_manage_shipments():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
             col1, col2 = st.columns([2, 1])
             
-        with col1:
+            with col1:
                 st.write("**Thông tin phiếu:**")
                 info_col1, info_col2 = st.columns(2)
                 
@@ -1553,7 +1553,7 @@ def show_manage_shipments():
                     st.info("Xem trước tem. Bấm 'In tem' trong khung để in (chọn máy in/bkhổ giấy trong hộp thoại).")
                     render_label_component(row)
             
-        with col2:
+            with col2:
                 # Image upload status
                 if not row.get('image_url'):
                     st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
@@ -1654,7 +1654,7 @@ def show_manage_shipments():
                                     upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                                     if upload_res['success']:
                                         urls.append(upload_res['url'])
-            else:
+                                    else:
                                         st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
                                         st.stop()
                                 if urls:
@@ -1689,8 +1689,8 @@ def show_manage_shipments():
                                 edit_key = f'edit_shipment_{row["id"]}'
                                 if edit_key in st.session_state:
                                     del st.session_state[edit_key]
-                    st.rerun()
-                else:
+                                st.rerun()
+                            else:
                                 st.error(f"❌ {result['error']}")
                     
                     with col_submit2:
@@ -1707,7 +1707,7 @@ def show_settings_screen():
     """Show settings screen for admin to manage suppliers"""
     if not is_admin():
         st.error("❌ Chỉ có quyền admin mới có thể truy cập trang này!")
-            return
+        return
         
     st.header("⚙️ Cài Đặt")
     
@@ -1837,7 +1837,7 @@ def show_add_supplier_form():
                 if result['success']:
                     st.success(f"✅ Đã thêm nhà cung cấp: {name} (ID: {result['id']})")
                     st.balloons()
-            st.rerun()
+                    st.rerun()
                 else:
                     st.error(f"❌ {result['error']}")
 
@@ -1958,8 +1958,8 @@ def show_user_management():
             res = delete_user(selected_user)
             if res['success']:
                 st.success(f"Đã xoá tài khoản {selected_user}")
-                    st.rerun()
-                else:
+                st.rerun()
+            else:
                 st.error(f"❌ {res['error']}")
 
     user_info = get_user(selected_user)
@@ -2021,13 +2021,13 @@ def show_database_management():
         df_users = get_all_users()
         
         col1, col2, col3, col4 = st.columns(4)
-    with col1:
+        with col1:
             st.metric("Số phiếu gửi hàng", len(df_shipments))
-    with col2:
+        with col2:
             st.metric("Số phiếu chuyển", len(df_transfers))
-    with col3:
+        with col3:
             st.metric("Số nhà cung cấp", len(df_suppliers))
-    with col4:
+        with col4:
             st.metric("Số tài khoản", len(df_users))
     except Exception as e:
         st.error(f"Lỗi khi lấy thống kê: {str(e)}")
@@ -2124,7 +2124,7 @@ def show_google_sheets_settings():
             df = get_all_shipments()
             if df.empty:
                 st.warning("⚠️ Không có dữ liệu để push")
-        else:
+            else:
                 append_mode = (push_mode == "Thêm mới (Append)")
                 result = push_shipments_to_sheets(df, append_mode=append_mode)
                 if result['success']:
@@ -2159,7 +2159,7 @@ def show_transfer_slip_scan(current_user):
             if result['success']:
                 st.success(f"Đã tạo phiếu chuyển: {result['transfer_code']}")
                 st.rerun()
-    else:
+            else:
                 st.error(f"Lỗi: {result['error']}")
         return
     
@@ -2227,7 +2227,7 @@ def show_transfer_slip_scan(current_user):
         # Show image if transfer slip has one
         # Chỉ tải ảnh khi đang xem phiếu chuyển này
         if active_slip.get('image_url'):
-    st.divider()
+            st.divider()
             st.subheader("Ảnh phiếu chuyển")
             display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển")
         
