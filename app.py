@@ -1,2340 +1,2145 @@
 """
-Streamlit Shipment Management Application
-Main application file with UI and business logic
+Streamlit shipment management system with analytics, filters, audit log,
+exports, and mobile optimizations.
 """
 
-import streamlit as st
-from PIL import Image
+from __future__ import annotations
+
+import io
+import sqlite3
+from datetime import datetime, date
+from typing import List, Optional, Tuple
+
 import pandas as pd
-from datetime import datetime
-import cv2
-import qrcode
-import base64
-from io import BytesIO
-import streamlit.components.v1 as components
-import requests
+import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+import matplotlib.pyplot as plt
 
-# Write service_account.json from secrets/env if missing (for Streamlit Cloud)
-import os
-try:
-    import streamlit as st
-except ImportError:
-    st = None
-
-def _write_sa_json(raw: str):
-    """Write service account JSON to file, sanitizing newline issues if needed."""
-    import json
-    import re
-
-    def try_json(content: str):
-        try:
-            json.loads(content)
-            return True
-        except Exception:
-            return False
-
-    candidate = raw
-    # First attempt: as-is
-    if not try_json(candidate):
-        # Normalize CRLF
-        candidate = candidate.replace("\r\n", "\n")
-    if not try_json(candidate):
-        # Escape actual newlines inside private_key string if present
-        def _escape_pk(match):
-            body = match.group(1)
-            body = body.replace("\r\n", "\n").replace("\n", "\\n")
-            return f'"private_key": "{body}"'
-
-        candidate = re.sub(r'"private_key":\s*"([^"]+?)"', _escape_pk, candidate, flags=re.S)
-
-    # Last check
-    if not try_json(candidate):
-        raise ValueError("Service account JSON invalid after sanitization.")
-
-    with open("service_account.json", "w", encoding="utf-8") as f:
-        f.write(candidate)
+# Optional camera/QR dependencies
+try:  # pragma: no cover - optional deps
+    import av  # type: ignore
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+    from pyzbar.pyzbar import decode  # type: ignore
+    from streamlit_webrtc import WebRtcMode, webrtc_streamer  # type: ignore
+except ImportError:  # pragma: no cover - optional deps
+    av = cv2 = np = decode = webrtc_streamer = WebRtcMode = None
 
 
-def ensure_service_account_file():
-    """Rewrite service_account.json from secrets/env on every startup to avoid stale/bad files."""
-    raw = None
-    if st is not None and "SERVICE_ACCOUNT_JSON" in st.secrets:
-        raw = st.secrets["SERVICE_ACCOUNT_JSON"]
-    if raw is None:
-        raw = os.getenv("SERVICE_ACCOUNT_JSON")
-    if raw:
-        _write_sa_json(raw)
+DB_PATH = "shipment.db"
 
-# Import modules
-# Ensure local config/database modules take precedence
-import os
-import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Trạng thái hiển thị theo luồng (giữ nguyên giá trị gốc, chỉ đổi giao diện)
+STATUS_FLOW = [
+    "Đang gửi",
+    "Phiếu tạm",
+    "Chuyển kho",
+    "Đang xử lý",
+    "Đã nhận",
+    "Nhập kho",
+    "Nhập kho xử lý",
+    "Gửi NCC",
+    "Hoàn thành chuyển SR",
+    "Kết thúc",
+    "Hư hỏng",
+    "Mất",
+]
 
-from database import (
-    init_database, save_shipment, update_shipment_status, update_shipment,
-    get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
-    get_all_suppliers, add_supplier, update_supplier, delete_supplier,
-    set_user_password, get_all_users, get_shipment_by_id,
-    create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
-    get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
-    update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
-    auto_update_status_after_1hour, get_active_shipments
+# Mô tả ngắn cho từng trạng thái
+STATUS_DESCRIPTIONS = {
+    "Đang gửi": "Phiếu đã được tạo và đang chờ xử lý.",
+    "Phiếu tạm": "Phiếu đang ở trạng thái nháp/tạm.",
+    "Chuyển kho": "Đơn hàng đang trên đường di chuyển giữa các kho.",
+    "Đang xử lý": "Đơn hàng đang được phân loại/xử lý tại kho.",
+    "Đã nhận": "Kho đã nhận hàng, chờ các bước tiếp theo.",
+    "Nhập kho": "Hàng đã nhập kho.",
+    "Nhập kho xử lý": "Hàng đang được xử lý trong kho.",
+    "Gửi NCC": "Hàng đã gửi đến nhà cung cấp.",
+    "Hoàn thành chuyển SR": "Đã hoàn thành chuyển cửa hàng/SR.",
+    "Kết thúc": "Đơn hàng đã hoàn tất/giao thành công.",
+    "Hư hỏng": "Đơn gặp vấn đề hư hỏng.",
+    "Mất": "Đơn hàng thất lạc, cần xử lý.",
+}
+
+# Nhãn hiển thị kiểu Shopee (chỉ đổi text trình bày)
+STATUS_ALIASES = {
+    "Kết thúc": "Đã giao",
+    "Đã nhận": "Đã giao",
+    "Chuyển kho": "Đang vận chuyển",
+    "Đang xử lý": "Đang phân loại",
+    "Nhập kho": "Đang nhập kho",
+    "Nhập kho xử lý": "Đang nhập kho",
+    "Gửi NCC": "Gửi nhà cung cấp",
+    "Phiếu tạm": "Chờ xác nhận",
+}
+
+
+st.set_page_config(
+    page_title="Quản Lý Giao Nhận",
+    page_icon=None,
+    layout="wide",
 )
-from qr_scanner import decode_qr_from_image
-from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
-from config import STATUS_VALUES
-from google_sheets import push_shipments_to_sheets, test_connection
-from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder
-from telegram_notify import send_text, send_photo
-from telegram_helpers import notify_shipment_if_received
-
-# Label/printing helpers defaults
-LABEL_DEFAULT_WIDTH_MM = 50
-LABEL_DEFAULT_HEIGHT_MM = 30
 
 
-def ensure_label_defaults():
-    """Ensure label size defaults exist in session state."""
-    if 'label_width_mm' not in st.session_state:
-        st.session_state['label_width_mm'] = LABEL_DEFAULT_WIDTH_MM
-    if 'label_height_mm' not in st.session_state:
-        st.session_state['label_height_mm'] = LABEL_DEFAULT_HEIGHT_MM
-
-
-def generate_qr_base64(data: str) -> str:
-    """Generate a base64 PNG for a QR code (larger size for better scanning)."""
-    qr = qrcode.QRCode(box_size=6, border=2)  # Increased box_size from 4 to 6, border from 1 to 2
-    qr.add_data(data or "")
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
-
-
-def render_label_component(shipment: dict):
-    """Render a printable label for a shipment with QR + info."""
-    ensure_label_defaults()
-    width = st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)
-    height = st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)
-    qr_b64 = generate_qr_base64(shipment.get('qr_code', ''))
-    device_name = shipment.get('device_name', '')
-    imei = shipment.get('imei', '')
-    qr_code = shipment.get('qr_code', '')
-    capacity = shipment.get('capacity', '')
-
-    html = build_label_html(qr_b64, qr_code, device_name, imei, capacity, width, height, include_print_button=True, wrapper_id="label-area")
-    components.html(html, height=220, scrolling=False)
-
-
-def build_label_html(qr_b64: str, qr_code: str, device_name: str, imei: str, capacity: str, width: float, height: float,
-                     include_print_button: bool, wrapper_id: str) -> str:
-    # Chỉ lấy 6 số cuối của IMEI
-    imei_short = imei[-6:] if imei and len(imei) >= 6 else imei
-    
-    btn_html = ""
-    if include_print_button:
-        btn_html = """
-        <div style="margin-top:8px;">
-          <button onclick="window.print()" style="
-            background:#ef4444;
-            color:white;
-            border:none;
-            padding:8px 12px;
-            border-radius:8px;
-            cursor:pointer;
-          ">In tem</button>
-        </div>
-        """
-    return f"""
-    <div style="font-family:Arial,sans-serif;">
-      <div id="{wrapper_id}" style="
-        width:{width}mm;
-        height:{height}mm;
-        padding:3mm;
-        box-sizing:border-box;
-        border:1px dashed #d1d5db;
-        display:flex;
-        gap:4px;
-        align-items:center;
-        page-break-inside: avoid;
-      ">
-        <div style="flex:0 0 50%;">
-          <img src="data:image/png;base64,{qr_b64}" style="width:100%;height:auto;max-width:100%;" />
-        </div>
-        <div style="flex:1 1 50%; font-size:9px; line-height:1.2;">
-          <div style="margin-bottom:2px;"><strong>QR:</strong> {qr_code}</div>
-          <div style="margin-bottom:2px;"><strong>TB:</strong> {device_name}</div>
-          <div style="margin-bottom:2px;"><strong>IMEI:</strong> {imei_short}</div>
-          <div><strong>Dung lượng:</strong> {capacity}</div>
-        </div>
-      </div>
-      {btn_html}
-      <style>
-        @media print {{
-          body {{
-            margin:0;
-          }}
-          button {{
-            display:none;
-          }}
-          #{wrapper_id} {{
-            border:none;
-          }}
-        }}
-      </style>
-    </div>
+# -------------------- GLOBAL STYLES --------------------
+st.markdown(
     """
-
-
-def render_labels_bulk(shipments):
-    """Render multiple labels at once and trigger a single print dialog."""
-    ensure_label_defaults()
-    width = st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)
-    height = st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)
-
-    labels_html_parts = []
-    for idx, sh in enumerate(shipments):
-        qr_b64 = generate_qr_base64(sh.get('qr_code', ''))
-        part = build_label_html(
-            qr_b64=qr_b64,
-            qr_code=sh.get('qr_code', ''),
-            device_name=sh.get('device_name', ''),
-            imei=sh.get('imei', ''),
-            capacity=sh.get('capacity', ''),
-            width=width,
-            height=height,
-            include_print_button=False,
-            wrapper_id=f"label-{idx}"
-        )
-        labels_html_parts.append(part)
-
-    full_html = f"""
-    <div style="font-family:Arial,sans-serif;">
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        {''.join(labels_html_parts)}
-      </div>
-      <div style="margin-top:12px;">
-        <button onclick="window.print()" style="
-          background:#ef4444;
-          color:white;
-          border:none;
-          padding:10px 14px;
-          border-radius:10px;
-          cursor:pointer;
-        ">In tất cả tem đã chọn</button>
-      </div>
-      <style>
-        @media print {{
-          body {{
-            margin:0;
-          }}
-          button {{
-            display:none;
-          }}
-          [id^="label-"] {{
-            border:none !important;
-          }}
-        }}
-      </style>
-    </div>
-    """
-    components.html(full_html, height=400, scrolling=True)
-
-# ----------------------- UI Helpers ----------------------- #
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=5)  # Cache 1 giờ, tối đa 5 ảnh
-def _get_drive_image_bytes(file_id):
-    """
-    Tải ảnh từ Drive một lần và cache lại
-    - Cache tối đa 5 ảnh, tự động xóa ảnh cũ nhất khi quá 5
-    - Chỉ tải khi chưa có trong cache, không làm nặng server
-    """
-    try:
-        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        response = requests.get(download_url, timeout=10, stream=True)
-        if response.status_code == 200:
-            return response.content
-    except Exception as e:
-        print(f"Error loading image {file_id}: {e}")
-    return None
-
-
-def display_drive_image(image_url, width=300, caption=""):
-    """
-    Hiển thị ảnh từ Google Drive tự động (không cần expander)
-    - Tự động tải và hiển thị ảnh khi được gọi
-    - Cache tối đa 5 ảnh, tự động xóa ảnh cũ khi quá giới hạn
-    """
-    try:
-        # Extract file ID from URL
-        file_id = None
-        if 'uc?export=download&id=' in image_url:
-            file_id = image_url.split('id=')[-1]
-        elif 'id=' in image_url:
-            file_id = image_url.split('id=')[-1].split('&')[0]
+    <style>
+        /* Root Variables */
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --shadow: rgba(0, 0, 0, 0.3);
+        }
         
-        if file_id:
-            # Tải ảnh với cache (tối đa 5 ảnh)
-            image_bytes = _get_drive_image_bytes(file_id)
-            
-            if image_bytes:
-                img = Image.open(BytesIO(image_bytes))
-                st.image(img, width=width, caption=caption)
-                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-            else:
-                st.warning("Không thể tải ảnh từ Drive")
-                st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-            return True
-        else:
-            # Fallback: try direct URL
-            try:
-                st.image(image_url, width=width, caption=caption)
-                return True
-            except:
-                st.markdown(f"[Mở ảnh]({image_url})")
-                return False
-    except Exception as e:
-        st.warning(f"Không thể hiển thị ảnh: {str(e)}")
-        st.markdown(f"[Mở ảnh trên Drive]({image_url})")
-        return False
-
-
-def inject_sidebar_styles():
-    """Apply custom styles for a cleaner, more professional sidebar."""
-    st.markdown(
-        """
-        <style>
-        /* Sidebar container */
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #f7f9fc 0%, #eef2f7 100%);
-            border-right: 1px solid #e5e7eb;
-            padding-top: 12px;
+        /* Main Container */
+        .main .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 1200px;
         }
-        /* Title and user info */
-        [data-testid="stSidebar"] .sidebar-title {
-            font-size: 20px;
+        
+        /* Typography */
+        h1, h2, h3 {
+            color: var(--text-primary) !important;
+            font-weight: 700 !important;
+            margin-bottom: 1rem !important;
+        }
+        
+        h1 {
+            font-size: 2.5rem !important;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px var(--shadow);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 12px var(--shadow);
+        }
+        
+        /* Metrics Cards */
+        .metric-card {
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 4px var(--shadow);
+        }
+        
+        .metric-card .metric-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .metric-card .metric-value {
+            font-size: 2rem;
             font-weight: 700;
-            color: #111827;
-            margin-bottom: 12px;
+            color: var(--text-primary);
         }
-        [data-testid="stSidebar"] .sidebar-user {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 6px;
-        }
-        [data-testid="stSidebar"] .sidebar-label {
-            font-size: 13px;
-            font-weight: 600;
-            color: #111827;
-            margin: 12px 0 6px 0;
-        }
-        /* Nav buttons - base */
-        [data-testid="stSidebar"] .stButton>button {
-            width: 100%;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
-            color: #111827;
+        
+        /* Buttons */
+        .stButton > button {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
             border-radius: 10px;
-            padding: 10px 12px;
+            padding: 0.75rem 1.5rem;
             font-weight: 600;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-            transition: all 0.15s ease;
-        }
-        /* Secondary (default) */
-        [data-testid="stSidebar"] .stButton>button[data-testid="baseButton-secondary"] {
-            background: #ffffff;
-            color: #111827;
-            border: 1px solid #e5e7eb;
-        }
-        [data-testid="stSidebar"] .stButton>button:hover {
-            border-color: #3b82f6;
-            box-shadow: 0 4px 10px rgba(59,130,246,0.16);
-            transform: translateY(-1px);
-        }
-        /* Primary (selected) */
-        [data-testid="stSidebar"] .stButton>button[data-testid="baseButton-primary"] {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: #fff;
-            border: 1px solid #1d4ed8;
-            box-shadow: 0 6px 16px rgba(37,99,235,0.28);
-        }
-        [data-testid="stSidebar"] .stButton>button[data-testid="baseButton-primary"]:hover {
-            filter: brightness(1.02);
-            transform: translateY(-1px);
-        }
-        /* Logout button */
-        [data-testid="stSidebar"] .logout-btn>button {
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px var(--shadow);
             width: 100%;
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px var(--shadow);
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+        }
+        
+        .stButton > button:active {
+            transform: translateY(0);
+        }
+        
+        /* Primary Button */
+        button[kind="primary"] {
+            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
+        }
+        
+        /* Form Inputs */
+        .stTextInput > div > div > input,
+        .stSelectbox > div > div > select,
+        .stTextArea > div > div > textarea {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+        
+        .stTextInput > div > div > input:focus,
+        .stSelectbox > div > div > select:focus,
+        .stTextArea > div > div > textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            outline: none;
+        }
+        
+        /* Labels */
+        label {
+            color: var(--text-primary) !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+        
+        /* Main Background */
+        .stApp {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        
+        /* Sidebar */
+        .css-1d391kg {
+            background: var(--bg-primary) !important;
+        }
+        
+        [data-testid="stSidebar"] {
+            background: var(--bg-primary) !important;
+            border-right: 1px solid var(--border);
+        }
+        
+        [data-testid="stSidebar"] .css-1d391kg {
+            background: var(--bg-primary) !important;
+        }
+        
+        /* Main content area */
+        .main .block-container {
+            background: transparent;
+        }
+        
+        /* Radio Buttons */
+        .stRadio > div {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+        }
+        
+        .stRadio label {
+            color: var(--text-primary) !important;
+            font-weight: 500 !important;
+        }
+        
+        /* Dataframe */
+        .dataframe {
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        
+        /* Success/Error Messages */
+        .stSuccess {
+            background: rgba(16, 185, 129, 0.1);
+            border-left: 4px solid var(--success);
             border-radius: 8px;
-            border: 1px solid #fca5a5;
-            background: #fff1f2;
-            color: #b91c1c;
-            font-weight: 600;
+            padding: 1rem;
         }
-        [data-testid="stSidebar"] .logout-btn>button:hover {
-            border-color: #ef4444;
-            background: #ffe4e6;
+        
+        .stError {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid var(--danger);
+            border-radius: 8px;
+            padding: 1rem;
         }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def inject_main_styles():
-    """Apply global spacing tweaks for better mobile experience and dashboard styling."""
-    st.markdown(
-        """
-        <style>
-        /* Compact main padding for small screens */
+        
+        .stWarning {
+            background: rgba(245, 158, 11, 0.1);
+            border-left: 4px solid var(--warning);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        .stInfo {
+            background: rgba(99, 102, 241, 0.1);
+            border-left: 4px solid var(--primary);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        /* Divider */
+        hr {
+            border-color: var(--border);
+            margin: 2rem 0;
+        }
+        
+        /* Mobile Responsive */
         @media (max-width: 768px) {
-            [data-testid="stAppViewContainer"] .main .block-container {
-                padding-top: 1rem;
-                padding-bottom: 2rem;
-                padding-left: 0.9rem;
-                padding-right: 0.9rem;
+            .main .block-container {
+                padding: 1rem;
+            }
+            
+            h1 {
+                font-size: 1.75rem !important;
+            }
+            
+            .metric-card {
+                margin-bottom: 1rem;
+            }
+            
+            .metric-card .metric-value {
+                font-size: 1.5rem;
+            }
+            
+            .stButton > button {
+                padding: 1rem;
+                font-size: 1rem;
+            }
+            
+            [data-testid="column"] {
+                margin-bottom: 1rem;
+            }
+            
+            .card {
+                padding: 1rem;
             }
         }
         
-        </style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        /* Camera Container */
+        .camera-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+        
+        /* Modal/Popup Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 90%;
+            max-height: 90vh;
+            width: 600px;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            position: relative;
+            animation: slideUp 0.3s ease-out;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: all 0.2s;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-close-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .camera-wrapper {
+            width: 100%;
+            min-height: 400px;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Hide modal when not shown */
+        .modal-hidden {
+            display: none !important;
+        }
+        
+        /* Status Badges */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        .status-pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+        
+        .status-received {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+        
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        /* Shopee-style status card + timeline (UI only, không đổi trạng thái gốc) */
+        .shopee-status-card {
+            background: linear-gradient(120deg, rgba(99,102,241,0.15), rgba(139,92,246,0.08));
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            margin: 0.5rem 0 1rem 0;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        .shopee-status-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .shopee-status-desc {
+            color: var(--text-secondary);
+            margin: 0.35rem 0 0 0;
+            font-size: 0.95rem;
+        }
+        .status-timeline {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+            margin: 1rem 0 1.5rem 0;
+        }
+        .timeline-step {
+            position: relative;
+            flex: 1;
+            text-align: center;
+            min-width: 80px;
+        }
+        .timeline-step .step-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            margin: 0 auto;
+            border: 3px solid var(--border);
+            background: var(--bg-card);
+            z-index: 2;
+        }
+        .timeline-step.done .step-dot {
+            background: var(--success);
+            border-color: var(--success);
+        }
+        .timeline-step.current .step-dot {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 6px rgba(99,102,241,0.15);
+        }
+        .timeline-step.upcoming .step-dot {
+            background: var(--bg-secondary);
+            border-color: var(--border);
+        }
+        .timeline-step .step-connector {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            width: 100%;
+            height: 3px;
+            background: var(--border);
+            z-index: 1;
+        }
+        .timeline-step.done .step-connector {
+            background: linear-gradient(90deg, var(--success) 0%, var(--success) 60%, var(--border) 100%);
+        }
+        .timeline-step.current .step-connector {
+            background: linear-gradient(90deg, var(--primary) 0%, var(--border) 100%);
+        }
+        .timeline-step:last-child .step-connector {
+            display: none;
+        }
+        .timeline-step .step-label {
+            margin-top: 0.5rem;
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .timeline-step .step-sub {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.15rem;
+        }
+        
+        /* Form Container */
+        .form-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+        
+        /* Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .card, .form-container, .metric-card {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        /* Ẩn HOÀN TOÀN tất cả button trong webrtc container */
+        div[data-testid="stWebRTC"] button,
+        div[data-testid="stWebRTC"] button[title="Start"],
+        div[data-testid="stWebRTC"] button[title="Stop"],
+        div[data-testid="stWebRTC"] * button,
+        /* Ẩn button MUI (Material-UI) */
+        div[data-testid="stWebRTC"] .MuiButton-root,
+        div[data-testid="stWebRTC"] .MuiButtonBase-root,
+        div[data-testid="stWebRTC"] button.MuiButton-contained,
+        div[data-testid="stWebRTC"] button:contains("Start"),
+        div[data-testid="stWebRTC"] button:contains("Stop"),
+        /* Ẩn container MUI chứa button */
+        div[data-testid="stWebRTC"] .MuiBox-root {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            position: absolute !important;
+            left: -9999px !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+        
+        /* Ẩn SELECT DEVICE và các control khác */
+        div[data-testid="stWebRTC"] select,
+        div[data-testid="stWebRTC"] label,
+        div[data-testid="stWebRTC"] .stSelectbox {
+            display: none !important;
+        }
+        
+        /* Styling cho camera box vuông */
+        #camera-box-send {
+            position: relative;
+            display: block;
+        }
+        
+        /* Đảm bảo webrtc container hiển thị */
+        #camera-box-send div[data-testid="stWebRTC"] {
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 500px !important;
+            display: block !important;
+            position: relative !important;
+            background: #000 !important;
+        }
+        
+        /* Đảm bảo video element hiển thị và fit vào box */
+        #camera-box-send div[data-testid="stWebRTC"] video {
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 500px !important;
+            max-height: 500px !important;
+            object-fit: cover !important;
+            border-radius: 8px !important;
+            background: #000 !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+        }
+        
+        /* Đảm bảo tất cả video trong camera box hiển thị */
+        #camera-box-send video {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+        }
+        
+        /* Đảm bảo camera container fit vào box vuông */
+        #camera-box-send div[data-testid="stWebRTC"] > div {
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 500px !important;
+            display: block !important;
+            position: relative !important;
+        }
+    </style>
+    <script>
+        // Xóa hoàn toàn các button START/STOP (bao gồm MUI buttons)
+        function removeStartStopButtons() {
+            const webrtcContainers = document.querySelectorAll('div[data-testid="stWebRTC"]');
+            webrtcContainers.forEach(container => {
+                // Tìm và xóa tất cả button (bao gồm MUI)
+                const buttons = container.querySelectorAll('button');
+                buttons.forEach(btn => {
+                    const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                    const title = (btn.getAttribute('title') || '').toLowerCase();
+                    const hasMuiClass = btn.classList.contains('MuiButton-root') || 
+                                       btn.classList.contains('MuiButtonBase-root');
+                    
+                    // Xóa nút START, STOP, hoặc bất kỳ button MUI nào
+                    if (title === 'start' || title === 'stop' || 
+                        text === 'START' || text === 'STOP' || 
+                        text.includes('START') || text.includes('STOP') ||
+                        hasMuiClass) {
+                        // Xóa button và cả parent container nếu là MUI Box
+                        const parent = btn.parentNode;
+                        if (parent && parent.classList && parent.classList.contains('MuiBox-root')) {
+                            // Xóa cả MuiBox-root container
+                            if (parent.parentNode) {
+                                parent.parentNode.removeChild(parent);
+                            }
+                        } else {
+                            // Chỉ xóa button
+                            if (btn.parentNode) {
+                                btn.parentNode.removeChild(btn);
+                            }
+                        }
+                    }
+                });
+                
+                // Xóa tất cả MuiBox-root containers (có thể chứa button START/STOP)
+                const muiBoxes = container.querySelectorAll('.MuiBox-root');
+                muiBoxes.forEach(box => {
+                    const buttons = box.querySelectorAll('button');
+                    let shouldRemove = false;
+                    buttons.forEach(btn => {
+                        const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                        const hasMuiClass = btn.classList.contains('MuiButton-root') || 
+                                           btn.classList.contains('MuiButtonBase-root');
+                        // Xóa nếu là START/STOP hoặc là button MUI
+                        if (text === 'START' || text === 'STOP' || 
+                            text.includes('START') || text.includes('STOP') ||
+                            hasMuiClass) {
+                            shouldRemove = true;
+                        }
+                    });
+                    if (shouldRemove && box.parentNode) {
+                        box.parentNode.removeChild(box);
+                    }
+                });
+                
+                // Xóa tất cả button MUI không nằm trong MuiBox-root
+                const muiButtons = container.querySelectorAll('.MuiButton-root, .MuiButtonBase-root');
+                muiButtons.forEach(btn => {
+                    const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                    if (text === 'START' || text === 'STOP' || 
+                        text.includes('START') || text.includes('STOP')) {
+                        const parent = btn.parentNode;
+                        if (parent && parent.classList && parent.classList.contains('MuiBox-root')) {
+                            if (parent.parentNode) {
+                                parent.parentNode.removeChild(parent);
+                            }
+                        } else if (btn.parentNode) {
+                            btn.parentNode.removeChild(btn);
+                        }
+                    }
+                });
+                
+                // Xóa SELECT DEVICE
+                const selects = container.querySelectorAll('select');
+                selects.forEach(sel => {
+                    if (sel.parentNode) {
+                        sel.parentNode.removeChild(sel);
+                    }
+                });
+                
+                // Xóa label liên quan
+                const labels = container.querySelectorAll('label');
+                labels.forEach(label => {
+                    const text = (label.textContent || '').toUpperCase();
+                    if (text.includes('DEVICE') || text.includes('SELECT')) {
+                        if (label.parentNode) {
+                            label.parentNode.removeChild(label);
+                        }
+                    }
+                });
+            });
+        }
+        
+        // Tự động start camera ngay khi được render
+        function autoStartCamera() {
+            const webrtcContainers = document.querySelectorAll('div[data-testid="stWebRTC"]');
+            webrtcContainers.forEach(container => {
+                // Kiểm tra xem đã start chưa
+                if (container.dataset.autoStarted === 'true') {
+                    // Vẫn xóa button để đảm bảo
+                    removeStartStopButtons();
+                    return;
+                }
+                
+                // Tìm tất cả button (bao gồm MUI)
+                const buttons = container.querySelectorAll('button');
+                let startButton = null;
+                let startButtonParent = null;
+                
+                buttons.forEach(btn => {
+                    const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                    const title = (btn.getAttribute('title') || '').toLowerCase();
+                    const hasMuiClass = btn.classList.contains('MuiButton-root') || 
+                                       btn.classList.contains('MuiButtonBase-root');
+                    
+                    // Tìm nút START (có thể là MUI hoặc button thường)
+                    if (title === 'start' || text === 'START' || text.includes('START')) {
+                        startButton = btn;
+                        // Nếu button nằm trong MuiBox-root, lưu parent để xóa sau
+                        if (btn.parentNode && btn.parentNode.classList && 
+                            btn.parentNode.classList.contains('MuiBox-root')) {
+                            startButtonParent = btn.parentNode;
+                        }
+                    }
+                });
+                
+                // Tự động click START ngay lập tức
+                if (startButton) {
+                    try {
+                        // Click START
+                        startButton.click();
+                        container.dataset.autoStarted = 'true';
+                        
+                        // Xóa button và parent container sau khi click
+                        setTimeout(() => {
+                            // Xóa cả MuiBox-root container nếu có
+                            if (startButtonParent && startButtonParent.parentNode) {
+                                startButtonParent.parentNode.removeChild(startButtonParent);
+                            } else if (startButton.parentNode) {
+                                // Hoặc chỉ xóa button
+                                startButton.parentNode.removeChild(startButton);
+                            }
+                            
+                            // Xóa tất cả button còn lại (bao gồm STOP)
+                            container.querySelectorAll('button').forEach(b => {
+                                const text = (b.textContent || b.innerText || '').trim().toUpperCase();
+                                if (text === 'STOP' || text.includes('STOP')) {
+                                    const parent = b.parentNode;
+                                    if (parent && parent.classList && parent.classList.contains('MuiBox-root')) {
+                                        if (parent.parentNode) {
+                                            parent.parentNode.removeChild(parent);
+                                        }
+                                    } else if (b.parentNode) {
+                                        b.parentNode.removeChild(b);
+                                    }
+                                }
+                            });
+                            
+                            // Xóa tất cả MuiBox-root containers
+                            container.querySelectorAll('.MuiBox-root').forEach(box => {
+                                const buttons = box.querySelectorAll('button');
+                                buttons.forEach(btn => {
+                                    const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                                    if (text === 'START' || text === 'STOP') {
+                                        if (box.parentNode) {
+                                            box.parentNode.removeChild(box);
+                                        }
+                                    }
+                                });
+                            });
+                        }, 100);
+                    } catch(e) {
+                        console.log('Auto-start error:', e);
+                    }
+                } else {
+                    // Nếu không tìm thấy button START, kiểm tra xem camera đã chạy chưa
+                    const video = container.querySelector('video');
+                    if (video) {
+                        // Đảm bảo video hiển thị
+                        video.style.display = 'block';
+                        video.style.visibility = 'visible';
+                        video.style.opacity = '1';
+                        video.style.width = '100%';
+                        video.style.height = '100%';
+                        video.style.objectFit = 'cover';
+                        
+                        if (video.paused) {
+                            video.play().catch(() => {});
+                        }
+                        container.dataset.autoStarted = 'true';
+                    } else {
+                        // Nếu chưa có video, thử tìm lại button START sau một chút
+                        setTimeout(() => {
+                            const retryButtons = container.querySelectorAll('button');
+                            retryButtons.forEach(btn => {
+                                const text = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+                                const title = (btn.getAttribute('title') || '').toLowerCase();
+                                if (title === 'start' || text === 'START' || text.includes('START')) {
+                                    btn.click();
+                                    container.dataset.autoStarted = 'true';
+                                }
+                            });
+                        }, 500);
+                    }
+                }
+                
+                // Đảm bảo video hiển thị nếu đã có
+                const video = container.querySelector('video');
+                if (video) {
+                    video.style.display = 'block';
+                    video.style.visibility = 'visible';
+                    video.style.opacity = '1';
+                }
+                
+                // Luôn xóa button để đảm bảo
+                removeStartStopButtons();
+            });
+        }
+        
+        // Chạy ngay khi DOM ready
+        function initAutoStart() {
+            autoStartCamera();
+            removeStartStopButtons();
+            // Chạy lại nhiều lần để đảm bảo
+            setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 100);
+            setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 300);
+            setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 500);
+            setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 1000);
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initAutoStart);
+        } else {
+            initAutoStart();
+        }
+        
+        // Observer để tự động start và xóa button khi có element mới
+        const observer = new MutationObserver(function(mutations) {
+            let hasWebRTC = false;
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) {
+                        if (node.getAttribute && node.getAttribute('data-testid') === 'stWebRTC') {
+                            hasWebRTC = true;
+                        } else if (node.querySelector) {
+                            const webrtc = node.querySelector('div[data-testid="stWebRTC"]');
+                            if (webrtc) hasWebRTC = true;
+                        }
+                    }
+                });
+            });
+            if (hasWebRTC) {
+                // Chạy ngay
+                autoStartCamera();
+                removeStartStopButtons();
+                // Chạy lại sau một chút
+                setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 100);
+                setTimeout(() => { autoStartCamera(); removeStartStopButtons(); }, 300);
+            }
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Đảm bảo video luôn hiển thị
+        function ensureVideoVisible() {
+            // Tìm tất cả video trong webrtc containers
+            const videos = document.querySelectorAll('div[data-testid="stWebRTC"] video');
+            videos.forEach(video => {
+                if (video) {
+                    // Force hiển thị video
+                    video.style.display = 'block';
+                    video.style.visibility = 'visible';
+                    video.style.opacity = '1';
+                    video.style.width = '100%';
+                    video.style.height = '100%';
+                    video.style.minHeight = '500px';
+                    video.style.maxHeight = '500px';
+                    video.style.objectFit = 'cover';
+                    video.style.background = '#000';
+                    video.style.position = 'relative';
+                    video.style.zIndex = '1';
+                    
+                    // Đảm bảo video play
+                    if (video.paused && video.readyState >= 2) {
+                        video.play().catch(() => {});
+                    }
+                }
+            });
+            
+            // Đặc biệt cho camera-box-send
+            const cameraBox = document.getElementById('camera-box-send');
+            if (cameraBox) {
+                const boxVideos = cameraBox.querySelectorAll('video');
+                boxVideos.forEach(video => {
+                    if (video) {
+                        video.style.display = 'block';
+                        video.style.visibility = 'visible';
+                        video.style.opacity = '1';
+                        video.style.width = '100%';
+                        video.style.height = '100%';
+                        video.style.minHeight = '500px';
+                        video.style.objectFit = 'cover';
+                        video.style.background = '#000';
+                    }
+                });
+            }
+        }
+        
+        // Observer riêng để phát hiện khi video được tạo
+        const videoObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) {
+                        // Nếu là video element
+                        if (node.tagName === 'VIDEO') {
+                            ensureVideoVisible();
+                            // Force play video
+                            setTimeout(() => {
+                                if (node.paused) {
+                                    node.play().catch(() => {});
+                                }
+                            }, 100);
+                        }
+                        // Nếu chứa video
+                        if (node.querySelectorAll) {
+                            const videos = node.querySelectorAll('video');
+                            if (videos.length > 0) {
+                                ensureVideoVisible();
+                            }
+                        }
+                    }
+                });
+            });
+        });
+        
+        videoObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Chạy lại mỗi 200ms để xóa button và đảm bảo video hiển thị
+        setInterval(() => {
+            removeStartStopButtons();
+            autoStartCamera();
+            ensureVideoVisible();
+        }, 200);
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# -------------------- DATABASE HELPERS --------------------
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_database() -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ShipmentDetails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            qr_code TEXT UNIQUE,
+            imei TEXT,
+            device_name TEXT,
+            capacity TEXT,
+            supplier TEXT,
+            status TEXT DEFAULT 'Đang gửi',
+            sent_time TEXT DEFAULT CURRENT_TIMESTAMP,
+            received_time TEXT,
+            notes TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS AuditLog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shipment_id INTEGER,
+            action TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            user_action TEXT,
+            FOREIGN KEY (shipment_id) REFERENCES ShipmentDetails(id)
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_caches() -> None:
+    get_all_shipments.clear()
+    get_suppliers.clear()
+    get_daily_statistics.clear()
+    get_supplier_statistics.clear()
+    get_processing_time.clear()
+
+
+def log_action(
+    shipment_id: int, action: str, old_value: Optional[str], new_value: Optional[str], user: str
+) -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO AuditLog (shipment_id, action, old_value, new_value, user_action)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (shipment_id, action, old_value, new_value, user),
+    )
+    conn.commit()
+    conn.close()
+
+
+def insert_shipment(
+    qr_code: str,
+    imei: str,
+    device_name: str,
+    capacity: str,
+    supplier: str,
+    notes: str,
+    user: str = "user",
+) -> Tuple[bool, str]:
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO ShipmentDetails
+            (qr_code, imei, device_name, capacity, supplier, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (qr_code.strip(), imei.strip(), device_name.strip(), capacity.strip(), supplier, notes),
+        )
+        shipment_id = cur.lastrowid
+        conn.commit()
+        log_action(shipment_id, "Tạo phiếu", None, "Đang gửi", user)
+        clear_caches()
+        return True, "Phiếu lưu thành công"
+    except sqlite3.IntegrityError:
+        return False, "QR code đã tồn tại"
+    finally:
+        conn.close()
+
+
+def update_shipment_status(qr_code: str, new_status: str, user: str = "user") -> Tuple[bool, str]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, status FROM ShipmentDetails WHERE qr_code = ?", (qr_code,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "Không tìm thấy phiếu"
+
+    shipment_id = row["id"]
+    old_status = row["status"]
+    received_time = datetime.now().isoformat() if new_status == "Đã nhận" else None
+
+    cur.execute(
+        """
+        UPDATE ShipmentDetails
+        SET status = ?, received_time = COALESCE(?, received_time)
+        WHERE id = ?
+        """,
+        (new_status, received_time, shipment_id),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(shipment_id, "Cập nhật trạng thái", old_status, new_status, user)
+    clear_caches()
+    return True, "Cập nhật thành công"
+
+
+@st.cache_data(ttl=300)
+def get_all_shipments() -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql("SELECT * FROM ShipmentDetails ORDER BY sent_time DESC", conn)
+    conn.close()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_suppliers() -> List[str]:
+    conn = get_connection()
+    df = pd.read_sql("SELECT DISTINCT supplier FROM ShipmentDetails ORDER BY supplier", conn)
+    conn.close()
+    suppliers = df["supplier"].dropna().tolist()
+    return suppliers
+
+
+@st.cache_data(ttl=300)
+def get_daily_statistics() -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql(
+        """
+        SELECT DATE(sent_time) as date,
+               COUNT(*) as total,
+               SUM(CASE WHEN status = 'Đã nhận' THEN 1 ELSE 0 END) as received
+        FROM ShipmentDetails
+        GROUP BY DATE(sent_time)
+        ORDER BY date DESC
+        LIMIT 30
+        """,
+        conn,
+    )
+    conn.close()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_supplier_statistics() -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql(
+        """
+        SELECT supplier,
+               COUNT(*) as total,
+               SUM(CASE WHEN status = 'Đã nhận' THEN 1 ELSE 0 END) as received
+        FROM ShipmentDetails
+        GROUP BY supplier
+        """,
+        conn,
+    )
+    conn.close()
+    return df
+
+
+@st.cache_data(ttl=300)
+def get_processing_time() -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql(
+        """
+        SELECT 
+            supplier,
+            AVG(CAST((julianday(COALESCE(received_time, sent_time)) - julianday(sent_time)) * 24 * 60 AS FLOAT)) as avg_minutes
+        FROM ShipmentDetails
+        WHERE status = 'Đã nhận'
+        GROUP BY supplier
+        """,
+        conn,
+    )
+    conn.close()
+    return df
+
+
+def search_shipments(
+    keyword: str,
+    status: Optional[str],
+    supplier: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> pd.DataFrame:
+    conn = get_connection()
+    query = "SELECT * FROM ShipmentDetails WHERE 1=1"
+    params: List[str] = []
+
+    if keyword:
+        query += " AND (qr_code LIKE ? OR imei LIKE ? OR device_name LIKE ?)"
+        params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+
+    if supplier:
+        query += " AND supplier = ?"
+        params.append(supplier)
+
+    if date_from:
+        query += " AND DATE(sent_time) >= ?"
+        params.append(date_from)
+
+    if date_to:
+        query += " AND DATE(sent_time) <= ?"
+        params.append(date_to)
+
+    query += " ORDER BY sent_time DESC"
+
+    df = pd.read_sql(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_statistics() -> Tuple[int, int, int, int]:
+    df = get_all_shipments()
+    total = len(df)
+    pending = len(df[df["status"] == "Đang gửi"])
+    received = len(df[df["status"] == "Đã nhận"])
+    error = total - pending - received
+    return total, pending, received, error
+
+
+def get_shipment_by_qr(qr_code: str) -> Optional[pd.Series]:
+    df = get_all_shipments()
+    match = df[df["qr_code"] == qr_code]
+    if match.empty:
+        return None
+    return match.iloc[0]
+
+
+def get_shipment_history(shipment_id: int) -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql(
+        """
+        SELECT action, old_value, new_value, timestamp, user_action
+        FROM AuditLog
+        WHERE shipment_id = ?
+        ORDER BY timestamp DESC
+        """,
+        conn,
+        params=[shipment_id],
+    )
+    conn.close()
+    return df
+
+
+def show_shipment_timeline(shipment_id: int) -> None:
+    history = get_shipment_history(shipment_id)
+    if history.empty:
+        st.info("Chưa có lịch sử thay đổi.")
+        return
+    st.markdown("#### Lịch Sử Thay Đổi")
+    for idx, row in history.iterrows():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(f"**{row['action']}**")
+        st.markdown(f"🕐 {row['timestamp']}")
+        if row["old_value"]:
+            st.markdown(f"**Thay đổi:** `{row['old_value']}` → `{row['new_value']}`")
+        st.markdown(f"👤 Người thực hiện: {row['user_action']}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+# -------------------- EXPORT HELPERS --------------------
+def generate_pdf_report(
+    shipments_df: pd.DataFrame,
+    supplier: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> io.BytesIO:
+    buffer = io.BytesIO()
+    pdf = SimpleDocTemplate(buffer, pagesize=A4)
+    elements: List = []
+
+    styles = getSampleStyleSheet()
+    title = Paragraph(
+        f"<b>BÁO CÁO GIAO NHẬN - {datetime.now().strftime('%d/%m/%Y')}</b>", styles["Title"]
+    )
+    elements.append(title)
+    elements.append(Spacer(1, 0.3 * inch))
+
+    if supplier or date_from or date_to:
+        filter_text = "Bộ lọc: "
+        parts = []
+        if supplier:
+            parts.append(f"NCC={supplier}")
+        if date_from:
+            parts.append(f"Từ {date_from}")
+        if date_to:
+            parts.append(f"Đến {date_to}")
+        filter_text += ", ".join(parts)
+        elements.append(Paragraph(filter_text, styles["Normal"]))
+        elements.append(Spacer(1, 0.2 * inch))
+
+    table_data = [
+        ["STT", "Mã QR", "IMEI", "Máy", "NCC", "Trạng Thái", "Gửi Lúc", "Nhận Lúc"]
+    ]
+    for idx, row in shipments_df.reset_index(drop=True).iterrows():
+        table_data.append(
+            [
+                str(idx + 1),
+                row.get("qr_code", "")[:10],
+                (row.get("imei", "") or "")[-6:],
+                (row.get("device_name", "") or "")[:15],
+                row.get("supplier", "") or "",
+                row.get("status", "") or "",
+                (row.get("sent_time", "") or "")[:16],
+                (row.get("received_time", "") or "")[:16] or "-",
+            ]
+        )
+
+    table = Table(table_data, colWidths=[0.6 * inch] * 8)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#667eea")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ]
+        )
+    )
+    elements.append(table)
+    pdf.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def generate_excel_report(shipments_df: pd.DataFrame) -> io.BytesIO:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        shipments_df.to_excel(writer, sheet_name="Phiếu Gửi", index=False)
+        stats_data = {
+            "Chỉ Số": ["Tổng Phiếu", "Đang Gửi", "Đã Nhận", "Lỗi/Khác"],
+            "Số Lượng": [
+                len(shipments_df),
+                len(shipments_df[shipments_df["status"] == "Đang gửi"]),
+                len(shipments_df[shipments_df["status"] == "Đã nhận"]),
+                len(
+                    shipments_df[
+                        ~shipments_df["status"].isin(["Đang gửi", "Đã nhận"])
+                    ]
+                ),
+            ],
+        }
+        stats_df = pd.DataFrame(stats_data)
+        stats_df.to_excel(writer, sheet_name="Thống Kê", index=False)
+    output.seek(0)
+    return output
+
+
+# -------------------- UI HELPERS --------------------
+def show_header() -> None:
+    st.markdown(
+        """
+        <div style="margin-bottom: 2rem;">
+            <h1>Hệ Thống Quản Lý Giao Nhận</h1>
+            <p style="color: var(--text-secondary); font-size: 1.1rem; margin-top: -0.5rem;">
+                Quét QR, quản lý phiếu, thống kê và xuất báo cáo
+            </p>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-# Function definitions
-def scan_qr_screen():
-    """Unified screen for scanning QR code - handles both new and existing shipments"""
-    current_user = get_current_user()
-    
-    # Initialize session state for camera
-    if 'show_camera' not in st.session_state:
-        st.session_state['show_camera'] = False
-    if 'scanned_qr_code' not in st.session_state:
-        st.session_state['scanned_qr_code'] = None
-    if 'found_shipment' not in st.session_state:
-        st.session_state['found_shipment'] = None
-    
-    # Check if we have a found shipment to display
-    found_shipment = st.session_state.get('found_shipment', None)
-    scanned_qr_code = st.session_state.get('scanned_qr_code', None)
-    # If we found a shipment, show it
-    if found_shipment:
-        show_shipment_info(current_user, found_shipment)
-        return
-    # If we have scanned QR code but no shipment found, show create form
-    if scanned_qr_code and not found_shipment:
-        show_create_shipment_form(current_user, scanned_qr_code)
-        return
-    
-    # Main layout
-    st.subheader("Quét QR Code")
-    st.caption("Chụp ảnh để nhận dạng QR.")
-    # Button to start scanning
-    col_btn1, col_btn2 = st.columns([1, 3])
-    with col_btn1:
-        if st.button("📷 Bắt đầu quét", type="primary", key="start_scan_btn"):
-            st.session_state['show_camera'] = True
-            st.session_state['scanned_qr_code'] = None
-            st.session_state['found_shipment'] = None
-            st.session_state['webrtc_qr'] = None
-            st.rerun()
-    
-    with col_btn2:
-        if st.session_state['show_camera']:
-            if st.button("❌ Dừng quét", key="stop_scan_btn"):
-                st.session_state['show_camera'] = False
-                st.rerun()
-    
-    # Show camera if enabled
-    if st.session_state['show_camera']:
-        st.info("Đưa QR code vào khung hình và chụp ảnh. Hệ thống sẽ tự động nhận diện.")
-        
-        picture = st.camera_input("📷 Quét mã QR", key="scan_camera")
-        
-        if picture is not None:
-            # Show processing indicator
-            with st.spinner("Đang xử lý và nhận diện QR code..."):
-                try:
-                    # Decode QR code automatically
-                    image = Image.open(picture)
-                    qr_text = decode_qr_from_image(image)
-                except Exception as e:
-                    st.error(f"❌ Lỗi khi xử lý ảnh: {str(e)}")
-                    qr_text = None
-                    # Check if pyzbar is available
-                    try:
-                        from qr_scanner import PYZBAR_AVAILABLE
-                        if not PYZBAR_AVAILABLE:
-                            st.error("**❌ Lỗi: Thư viện pyzbar chưa được cài đặt hoặc thiếu zbar DLL!**")
-                            st.info("""
-                            **Hướng dẫn cài đặt:**
-                            1. Cài đặt pyzbar: `python -m pip install pyzbar`
-                            2. Trên Windows, cần cài thêm zbar DLL:
-                               - Tải từ: https://github.com/NuGet/Home/issues/3901
-                               - Hoặc cài qua conda: `conda install -c conda-forge zbar`
-                            3. Khởi động lại ứng dụng
-                            """)
-                    except:
-                        pass
-            
-            if qr_text:
-                # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
-                qr_code = qr_text.strip()
-                
-                if qr_code:
-                    # Check if shipment already exists
-                    existing_shipment = get_shipment_by_qr_code(qr_code)
-                    
-                    if existing_shipment:
-                        # Shipment exists - show info
-                        st.session_state['found_shipment'] = existing_shipment
-                        st.session_state['scanned_qr_code'] = qr_code
-                        st.session_state['show_camera'] = False
-                        st.rerun()
-                    else:
-                        # New shipment - show create form
-                        st.success("✅ Đã nhận diện QR code! Đang chuyển sang form tạo phiếu...")
-                        st.session_state['scanned_qr_code'] = qr_code
-                        st.session_state['show_camera'] = False
-                        st.rerun()
-            else:
-                st.warning("⚠️ Không phát hiện QR code trong ảnh. Vui lòng thử lại.")
-                
-                # Check if OpenCV is available
-                try:
-                    from qr_scanner import CV2_AVAILABLE
-                    if not CV2_AVAILABLE:
-                        st.error("**❌ Lỗi: Thư viện opencv-python chưa được cài đặt!**")
-                        st.info("""
-                        **Hướng dẫn cài đặt:**
-                        1. Cài đặt opencv-python: `python -m pip install opencv-python`
-                        2. Khởi động lại ứng dụng
-                        """)
-                except:
-                    pass
-                
-                st.info("**Mẹo để quét thành công:**")
-                st.info("   - Đảm bảo QR code rõ ràng và đủ ánh sáng")
-                st.info("   - Giữ camera ổn định, không bị mờ")
-                st.info("   - QR code phải nằm hoàn toàn trong khung hình")
-                st.info("   - Thử chụp lại với góc độ khác")
-    else:
-        st.info("Click nút 'Bắt đầu quét' để mở camera và quét QR code")
 
-
-def show_shipment_info(current_user, shipment):
-    """Show existing shipment information with option to mark as received"""
-    st.subheader("📦 Thông Tin Phiếu Gửi Hàng")
-    
-    col1, col2 = st.columns([2, 1])
+def show_statistics() -> None:
+    total, pending, received, error = get_statistics()
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.success("✅ Phiếu đã tồn tại trong hệ thống!")
-        
-        # Display full shipment information
-        st.write("### Chi Tiết Phiếu")
-        
-        info_col1, info_col2 = st.columns(2)
-        
-        with info_col1:
-            st.write(f"**Mã QR Code:** {shipment['qr_code']}")
-            st.write(f"**IMEI:** {shipment['imei']}")
-            st.write(f"**Tên thiết bị:** {shipment['device_name']}")
-            st.write(f"**Dung lượng:** {shipment['capacity']}")
-        
-        with info_col2:
-            st.write(f"**Nhà cung cấp:** {shipment['supplier']}")
-            st.write(f"**Trạng thái:** {shipment['status']}")
-            st.write(f"**Thời gian gửi:** {shipment['sent_time']}")
-            if shipment['received_time']:
-                st.write(f"**Thời gian nhận:** {shipment['received_time']}")
-            st.write(f"**Người tạo:** {shipment['created_by']}")
-            if shipment['updated_by']:
-                st.write(f"**Người cập nhật:** {shipment['updated_by']}")
-        
-        if shipment['notes']:
-            st.write(f"**Ghi chú:** {shipment['notes']}")
-        
-        # Button to scan again
-        if st.button("🔄 Quét lại QR code", key="rescan_btn"):
-            st.session_state['found_shipment'] = None
-            st.session_state['scanned_qr_code'] = None
-            st.session_state['show_camera'] = True
-            st.rerun()
-    
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Tổng Phiếu</div>
+                <div class="metric-value">{total}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     with col2:
-        st.subheader("Cập Nhật Trạng Thái")
-        
-        current_status = shipment['status']
-        st.info(f"Trạng thái hiện tại: **{current_status}**")
-        
-        # Only show "Đã nhận" button if not yet received
-        if current_status != 'Đã nhận':
-            if st.button("✅ Đã Nhận", type="primary", key="mark_received_btn"):
-                result = update_shipment_status(
-                    qr_code=shipment['qr_code'],
-                    new_status='Đã nhận',
-                    updated_by=current_user,
-                    notes=None
-                )
-                
-                if result['success']:
-                    st.success("✅ Đã cập nhật trạng thái thành: **Đã nhận**")
-                    st.balloons()
-                    # Notify Telegram
-                    notify_shipment_if_received(shipment['id'], force=True)
-                    # Refresh shipment data
-                    st.session_state['found_shipment'] = get_shipment_by_qr_code(shipment['qr_code'])
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['error']}")
-        else:
-            st.success("✅ Phiếu đã được tiếp nhận")
-        
-        # Option to change to other status
-        new_status = st.selectbox(
-            "Thay đổi trạng thái:",
-            STATUS_VALUES,
-            index=STATUS_VALUES.index(current_status) if current_status in STATUS_VALUES else 0,
-            key="status_select"
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Đang Gửi</div>
+                <div class="metric-value" style="color: var(--warning);">{pending}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        
-        notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
-        
-        if st.button("🔄 Cập Nhật", key="update_status_btn"):
-            if new_status != current_status:
-                result = update_shipment_status(
-                    qr_code=shipment['qr_code'],
-                    new_status=new_status,
-                    updated_by=current_user,
-                    notes=notes if notes else None
-                )
-                
-                if result['success']:
-                    st.success(f"✅ Đã cập nhật trạng thái thành: **{new_status}**")
-                    st.balloons()
-                    # Notify Telegram if Đã nhận
-                    if new_status == 'Đã nhận':
-                        notify_shipment_if_received(shipment['id'], force=True)
-                    # Refresh shipment data
-                    st.session_state['found_shipment'] = get_shipment_by_qr_code(shipment['qr_code'])
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['error']}")
-            else:
-                st.warning("⚠️ Vui lòng chọn trạng thái khác với trạng thái hiện tại!")
-
-
-def show_create_shipment_form(current_user, qr_code):
-    """Show form to create shipment from scanned QR code"""
-    st.subheader("📝 Tạo Phiếu Gửi Hàng")
-    
-    # Initialize form data in session state if not exists
-    if 'form_qr_code' not in st.session_state:
-        st.session_state['form_qr_code'] = qr_code
-    if 'form_imei' not in st.session_state:
-        st.session_state['form_imei'] = ''
-    if 'form_device_name' not in st.session_state:
-        st.session_state['form_device_name'] = ''
-    if 'form_capacity' not in st.session_state:
-        st.session_state['form_capacity'] = ''
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.success("✅ Đã quét QR code thành công!")
-        st.write("**Vui lòng kiểm tra và điền đầy đủ thông tin:**")
-        
-        # Editable form fields
-        qr_code = st.text_input(
-            "Mã QR Code:",
-            value=st.session_state['form_qr_code'],
-            key="input_qr_code",
-            help="Mã QR code từ phiếu"
-        )
-        st.session_state['form_qr_code'] = qr_code
-        
-        imei = st.text_input(
-            "IMEI:",
-            value=st.session_state['form_imei'],
-            key="input_imei",
-            help="IMEI của thiết bị"
-        )
-        st.session_state['form_imei'] = imei
-        
-        device_name = st.text_input(
-            "Tên thiết bị:",
-            value=st.session_state['form_device_name'],
-            key="input_device_name",
-            help="Tên thiết bị (ví dụ: iPhone 15 Pro Max)"
-        )
-        st.session_state['form_device_name'] = device_name
-        
-        capacity = st.text_input(
-            "Dung lượng:",
-            value=st.session_state['form_capacity'],
-            key="input_capacity",
-            help="Dung lượng lưu trữ (ví dụ: 128GB)"
-        )
-        st.session_state['form_capacity'] = capacity
-        
-        # Show which fields are empty
-        empty_fields = []
-        if not qr_code.strip():
-            empty_fields.append("Mã QR Code")
-        if not imei.strip():
-            empty_fields.append("IMEI")
-        if not device_name.strip():
-            empty_fields.append("Tên thiết bị")
-        if not capacity.strip():
-            empty_fields.append("Dung lượng")
-        
-        if empty_fields:
-            st.warning(f"⚠️ Các trường còn trống: {', '.join(empty_fields)}")
-        
-        # Button to scan again
-        if st.button("🔄 Quét lại QR code", key="rescan_btn"):
-            # Clear form data
-            for key in ['form_qr_code', 'form_imei', 'form_device_name', 'form_capacity', 'scanned_qr_code']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.session_state['show_camera'] = True
-            st.rerun()
-    
-    with col2:
-        st.subheader("Thông Tin Phiếu")
-        
-        # Kiểm tra user có phải cửa hàng không
-        store_user = is_store_user()
-        store_name = None
-        if store_user:
-            store_name = get_store_name_from_username(current_user)
-            st.info(f"🏪 Tạo phiếu cho: **{store_name}**")
-        
-        # Trường cửa hàng (chỉ hiện cho user cửa hàng)
-        if store_user:
-            store_name_input = st.text_input(
-                "Tên cửa hàng:",
-                value=store_name,
-                key="store_name_input",
-                disabled=True,
-                help="Tự động điền từ tài khoản đăng nhập"
-            )
-        else:
-            store_name_input = st.text_input(
-                "Tên cửa hàng (nếu có):",
-                value="",
-                key="store_name_input",
-                help="Nhập tên cửa hàng nếu có"
-            )
-            if store_name_input.strip():
-                store_name = store_name_input.strip()
-        
-        # Get suppliers
-        suppliers_df = get_suppliers()
-        if suppliers_df.empty:
-            st.error("❌ Chưa có nhà cung cấp trong hệ thống")
-            return
-        
-        supplier = st.selectbox(
-            "Nhà cung cấp gửi:",
-            suppliers_df['name'].tolist(),
-            key="supplier_select"
-        )
-        
-        notes = st.text_area("Ghi chú:", key="notes_input")
-        uploaded_images_create = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_create")
-        
-        if st.button("💾 Lưu Phiếu", type="primary", key="save_btn"):
-            # Validate required fields
-            if not qr_code.strip():
-                st.error("❌ Vui lòng nhập Mã QR Code!")
-            elif not imei.strip():
-                st.error("❌ Vui lòng nhập IMEI!")
-            elif not device_name.strip():
-                st.error("❌ Vui lòng nhập Tên thiết bị!")
-            elif not capacity.strip():
-                st.error("❌ Vui lòng nhập Dung lượng!")
-            else:
-                image_url = None
-                if uploaded_images_create:
-                    urls = []
-                    for idx, f in enumerate(uploaded_images_create, start=1):
-                        file_bytes = f.getvalue()
-                        mime = f.type or "image/jpeg"
-                        orig_name = f.name or "image.jpg"
-                        ext = ""
-                        if "." in orig_name:
-                            ext = orig_name.split(".")[-1]
-                        if not ext:
-                            ext = "jpg"
-                        sanitized_qr = qr_code.strip().replace(" ", "_") or "qr_image"
-                        drive_filename = f"{sanitized_qr}_{idx}.{ext}"
-                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                        if upload_res['success']:
-                            urls.append(upload_res['url'])
-                        else:
-                            st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                            st.stop()
-                    if urls:
-                        image_url = ";".join(urls)
-
-                # Set status mặc định: "Phiếu tạm" cho cửa hàng, "Đang gửi" cho các user khác
-                default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
-                
-                result = save_shipment(
-                    qr_code=qr_code.strip(),
-                    imei=imei.strip(),
-                    device_name=device_name.strip(),
-                    capacity=capacity.strip(),
-                    supplier=supplier,
-                    created_by=current_user,
-                    notes=notes if notes else None,
-                    image_url=image_url,
-                    status=default_status,
-                    store_name=store_name
-                )
-                
-                if result['success']:
-                    st.success(f"✅ Phiếu #{result['id']} đã được lưu thành công!")
-                    st.balloons()
-                    # Notify only if default status is already Đã nhận (unlikely); skip otherwise
-                    if supplier and STATUS_VALUES and STATUS_VALUES[0] == 'Đã nhận':
-                        notify_shipment_if_received(result['id'], force=True)
-                    # Clear scanned data and form data
-                    for key in ['scanned_qr_code', 'show_camera', 
-                               'form_qr_code', 'form_imei', 'form_device_name', 'form_capacity', 'found_shipment']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    # Clear form
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['error']}")
-
-
-def receive_shipment_screen():
-    """Screen for scanning QR code to receive/update shipment"""
-    current_user = get_current_user()
-    
-    # Initialize session state for camera
-    if 'show_camera_receive' not in st.session_state:
-        st.session_state['show_camera_receive'] = False
-    if 'shipment_found' not in st.session_state:
-        st.session_state['shipment_found'] = False
-    
-    # Get found shipment from session
-    found_shipment = st.session_state.get('found_shipment', None)
-    
-    # If shipment already found, show update form directly
-    if found_shipment and st.session_state.get('shipment_found', False):
-        st.session_state['show_camera_receive'] = False
-        show_update_shipment_form(current_user, found_shipment)
-        return
-    
-    # Main layout
-    st.subheader("Quét QR Code để Tiếp Nhận Hàng")
-    
-    # Button to start scanning
-    col_btn1, col_btn2 = st.columns([1, 3])
-    with col_btn1:
-        if st.button("Bắt đầu quét", type="primary", key="start_scan_receive_btn"):
-            st.session_state['show_camera_receive'] = True
-            st.session_state['shipment_found'] = False
-            st.rerun()
-    
-    with col_btn2:
-        if st.session_state['show_camera_receive']:
-            if st.button("Dừng quét", key="stop_scan_receive_btn"):
-                st.session_state['show_camera_receive'] = False
-                st.rerun()
-    
-    # Show camera if enabled
-    if st.session_state['show_camera_receive']:
-        st.info("Đưa QR code vào khung hình và chụp ảnh. Hệ thống sẽ tự động nhận diện.")
-        
-        picture = st.camera_input("Quét mã QR", key="receive_camera")
-        
-        if picture is not None:
-            # Show processing indicator
-            with st.spinner("Đang xử lý và nhận diện QR code..."):
-                # Decode QR code automatically
-                image = Image.open(picture)
-                qr_text = decode_qr_from_image(image)
-            
-            if qr_text:
-                # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
-                qr_code = qr_text.strip()
-                
-                if qr_code:
-                    # Find shipment in database
-                    shipment_data = get_shipment_by_qr_code(qr_code)
-                    
-                    if shipment_data:
-                        # Successfully found
-                        st.success("Tìm thấy phiếu! Đang chuyển sang tab cập nhật...")
-                        
-                        # Store in session state
-                        st.session_state['found_shipment'] = shipment_data
-                        st.session_state['shipment_found'] = True
-                        st.session_state['show_camera_receive'] = False
-                        
-                        # Auto switch to update form
-                        st.rerun()
-                    else:
-                        st.error(f"Không tìm thấy phiếu với mã QR: `{qr_code}`")
-                        st.info("Vui lòng kiểm tra lại mã QR hoặc thử lại.")
-                        st.info("Click 'Dừng quét' để quay lại.")
-            else:
-                st.warning("⚠️ Không phát hiện QR code trong ảnh. Vui lòng thử lại.")
-                st.info("**Mẹo để quét thành công:**")
-                st.info("   - Đảm bảo QR code rõ ràng và đủ ánh sáng")
-                st.info("   - Giữ camera ổn định, không bị mờ")
-                st.info("   - QR code phải nằm hoàn toàn trong khung hình")
-                st.info("   - Thử chụp lại với góc độ khác")
-    else:
-        # Show instruction when camera is off
-        if not found_shipment:
-            st.info("Click nút 'Bắt đầu quét' để mở camera và quét QR code")
-        else:
-            # Show form if shipment found
-            show_update_shipment_form(current_user, found_shipment)
-
-
-def show_update_shipment_form(current_user, found_shipment):
-    """Show form to update shipment status"""
-    st.subheader("Cập Nhật Trạng Thái Phiếu")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.success("Đã tìm thấy phiếu!")
-        st.write("**Thông tin phiếu:**")
-        
-        info_col1, info_col2 = st.columns(2)
-        with info_col1:
-            st.write(f"**Mã QR:** {found_shipment['qr_code']}")
-            st.write(f"**IMEI:** {found_shipment['imei']}")
-            st.write(f"**Tên máy:** {found_shipment['device_name']}")
-        with info_col2:
-            st.write(f"**Dung lượng:** {found_shipment['capacity']}")
-            st.write(f"**NCC:** {found_shipment['supplier']}")
-            st.write(f"**Thời gian gửi:** {found_shipment['sent_time']}")
-        
-        # Button to scan again
-        if st.button("🔄 Quét lại QR code", key="rescan_receive_btn"):
-            st.session_state['found_shipment'] = None
-            st.session_state['shipment_found'] = False
-            st.session_state['show_camera_receive'] = True
-            st.rerun()
-    
-    with col2:
-        st.subheader("Cập Nhật Trạng Thái")
-        
-        current_status = found_shipment['status']
-        store_name = found_shipment.get('store_name', '')
-        if store_name:
-            st.info(f"🏪 Cửa hàng: **{store_name}**")
-        st.info(f"Trạng thái hiện tại: **{current_status}**")
-        
-        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
-        suppliers_df = get_suppliers()
-        status_options = STATUS_VALUES.copy()
-        
-        # Thêm các trạng thái "Gửi + tên NCC" nếu chưa có
-        for _, supplier_row in suppliers_df.iterrows():
-            supplier_name = supplier_row['name']
-            send_status = f"Gửi {supplier_name}"
-            if send_status not in status_options:
-                status_options.append(send_status)
-        
-        new_status = st.selectbox(
-            "Trạng thái mới:",
-            status_options,
-            index=status_options.index(current_status) if current_status in status_options else 0,
-            key="status_select"
-        )
-        
-        notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
-        
-        if st.button("Cập Nhật", type="primary", key="update_btn"):
-            if new_status != current_status:
-                result = update_shipment_status(
-                    qr_code=found_shipment['qr_code'],
-                    new_status=new_status,
-                    updated_by=current_user,
-                    notes=notes if notes else None
-                )
-                
-                if result['success']:
-                    st.success(f"Đã cập nhật trạng thái thành: **{new_status}**")
-                    st.balloons()
-                    # Notify Telegram nếu đã nhận hoặc hoàn thành
-                    if new_status in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
-                        res = notify_shipment_if_received(found_shipment['id'], force=True)
-                        if res and not res.get('success'):
-                            st.warning(f"Không gửi được Telegram: {res.get('error')}")
-                    # Clear found shipment
-                    if 'found_shipment' in st.session_state:
-                        del st.session_state['found_shipment']
-                    if 'shipment_found' in st.session_state:
-                        st.session_state['shipment_found'] = False
-                    if 'show_camera_receive' in st.session_state:
-                        st.session_state['show_camera_receive'] = False
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['error']}")
-            else:
-                st.warning("⚠️ Vui lòng chọn trạng thái khác với trạng thái hiện tại!")
-
-
-def show_dashboard():
-    """Show simple, clean dashboard with statistics"""
-    st.title("Dashboard Quản Lý")
-    
-    # Tự động chuyển trạng thái "Chuyển kho" → "Đang xử lý" sau 1 giờ
-    try:
-        auto_result = auto_update_status_after_1hour()
-        if auto_result['success'] and auto_result['updated_count'] > 0:
-            st.info(f"🔄 Đã tự động cập nhật {auto_result['updated_count']} phiếu quá 1 giờ")
-    except Exception as e:
-        print(f"Error auto-updating status: {e}")
-    
-    # Get all shipments
-    df = get_all_shipments()
-    
-    if df.empty:
-        st.info("Chưa có dữ liệu phiếu gửi hàng. Bắt đầu bằng cách quét QR code hoặc tạo phiếu mới.")
-        col_qa1, col_qa2 = st.columns(2)
-        with col_qa1:
-            if st.button("Quét QR Code", type="primary", use_container_width=True, key="qa_scan"):
-                st.session_state['nav'] = "Quét QR"
-                st.rerun()
-        with col_qa2:
-            if st.button("Tạo Phiếu Mới", use_container_width=True, key="qa_create"):
-                st.session_state['nav'] = "Quản Lý Phiếu"
-                st.rerun()
-        return
-    
-    # Calculate metrics
-    from config import ACTIVE_STATUSES, COMPLETED_STATUSES
-    total = len(df)
-    active_df = get_active_shipments()
-    active_count = len(active_df)
-    completed_df = df[df['status'].isin(COMPLETED_STATUSES)]
-    completed_count = len(completed_df)
-    
-    # Simple metrics layout
-    st.markdown("### Thống Kê")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Tổng Phiếu", total)
-    with col2:
-        st.metric("Đang Hoạt Động", active_count, delta=None)
     with col3:
-        st.metric("Đã Hoàn Thành", completed_count)
-    
-    st.divider()
-    
-    # Quick Actions
-    st.markdown("### Thao Tác Nhanh")
-    col_qa1, col_qa2, col_qa3 = st.columns(3)
-    with col_qa1:
-        if st.button("Quét QR Code", type="primary", use_container_width=True, key="qa_scan_dash"):
-            st.session_state['nav'] = "Quét QR"
-            st.rerun()
-    with col_qa2:
-        if st.button("In Tem QR", use_container_width=True, key="qa_print_dash"):
-            st.session_state['nav'] = "Quản Lý Phiếu"
-            st.rerun()
-    with col_qa3:
-        if st.button("Xem Tất Cả", use_container_width=True, key="qa_view_all"):
-            st.session_state['nav'] = "Quản Lý Phiếu"
-            st.rerun()
-    
-    st.divider()
-    
-    # Phiếu đang hoạt động (chưa hoàn thành)
-    st.markdown("### 🔴 Phiếu Đang Hoạt Động")
-    
-    if not active_df.empty:
-        # Format last_updated để hiển thị
-        if 'last_updated' in active_df.columns:
-            active_df_display = active_df.copy()
-            active_df_display['last_updated'] = pd.to_datetime(active_df_display['last_updated'], errors='coerce')
-            active_df_display['last_updated'] = active_df_display['last_updated'].dt.strftime('%d/%m/%Y %H:%M')
-        else:
-            active_df_display = active_df.copy()
-        
-        # Tạo cột hiển thị với icon online
-        display_data = []
-        for idx, row in active_df_display.iterrows():
-            status_icon = "🟢"  # Icon online
-            last_update = row.get('last_updated', 'N/A')
-            store_name = row.get('store_name', '')
-            store_info = f" ({store_name})" if store_name else ""
-            
-            display_data.append({
-                '🔴': status_icon,
-                'Mã QR': row.get('qr_code', ''),
-                'Tên thiết bị': row.get('device_name', ''),
-                'Trạng thái': row.get('status', ''),
-                'Cửa hàng': store_name if store_name else '-',
-                'Cập nhật lúc': last_update
-            })
-        
-        display_df = pd.DataFrame(display_data)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Đã Nhận</div>
+                <div class="metric-value" style="color: var(--success);">{received}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        
-        # Cho phép click vào từng phiếu để xem chi tiết
-        st.markdown("💡 **Nhấp vào một phiếu để xem chi tiết và cập nhật trạng thái**")
-    else:
-        st.info("Không có phiếu nào đang hoạt động.")
-    
-    st.divider()
-    
-    # Recent shipments (chỉ phiếu đã hoàn thành)
-    st.markdown("### Phiếu Gần Đây (Đã Hoàn Thành)")
-    
-    if not completed_df.empty:
-        try:
-            if 'sent_time' in completed_df.columns:
-                completed_df_copy = completed_df.copy()
-                completed_df_copy['sent_time'] = pd.to_datetime(completed_df_copy['sent_time'], errors='coerce')
-                recent_df = completed_df_copy.sort_values('sent_time', ascending=False, na_position='last').head(10)
-                recent_df = completed_df.loc[recent_df.index]
-            else:
-                recent_df = completed_df.head(10)
-        except:
-            recent_df = completed_df.head(10)
-        
-        if not recent_df.empty:
-            display_cols = ['qr_code', 'device_name', 'status', 'supplier']
-            if 'store_name' in recent_df.columns:
-                display_cols.insert(-1, 'store_name')
-            available_cols = [col for col in display_cols if col in recent_df.columns]
-            st.dataframe(
-                recent_df[available_cols],
-                use_container_width=True,
-                hide_index=True,
-                height=300
-            )
-    else:
-        st.info("Chưa có phiếu nào đã hoàn thành.")
-
-    # Lộ trình & lịch sử thay đổi
-    st.divider()
-    st.markdown("### Lộ trình & lịch sử trạng thái")
-    df_all = get_all_shipments()
-    if not df_all.empty:
-        selected_qr = st.selectbox("Chọn mã QR để xem lộ trình", df_all['qr_code'].tolist(), index=0)
-        shipment_row = df_all[df_all['qr_code'] == selected_qr].iloc[0].to_dict()
-        st.write(f"**Trạng thái hiện tại:** {shipment_row.get('status','')}")
-        st.write(f"**Cập nhật gần nhất:** {shipment_row.get('last_updated','')}")
-        # Audit log filtered
-        audit_df = get_audit_log()
-        if not audit_df.empty:
-            audit_df = audit_df[audit_df['shipment_id'] == shipment_row.get('id')]
-            if not audit_df.empty:
-                audit_df = audit_df[['timestamp','action','new_value','changed_by']]
-                st.dataframe(audit_df.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True, height=260)
-            else:
-                st.info("Chưa có lịch sử trạng thái cho phiếu này.")
-        else:
-            st.info("Chưa có lịch sử trạng thái.")
-    
-    # Filters and full list (collapsed)
-    with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            filter_status = st.multiselect(
-                "Trạng thái:",
-                STATUS_VALUES,
-                default=STATUS_VALUES,
-                key="dash_filter_status"
-            )
-        
-        with col2:
-            suppliers_list = df['supplier'].unique().tolist()
-            filter_supplier = st.multiselect(
-                "Nhà cung cấp:",
-                suppliers_list,
-                default=suppliers_list,
-                key="dash_filter_supplier"
-            )
-        
-        with col3:
-            date_range = None
-            if 'sent_time' in df.columns:
-                try:
-                    df_copy = df.copy()
-                    df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                    min_date = df_copy['sent_time'].min().date()
-                    max_date = df_copy['sent_time'].max().date()
-                    
-                    date_range = st.date_input(
-                        "Khoảng thời gian:",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                        key="dash_date_range"
-                    )
-                except:
-                    date_range = None
-        
-        # Apply filters
-        filtered_df = df[
-            (df['status'].isin(filter_status)) &
-            (df['supplier'].isin(filter_supplier))
-        ]
-        
-        # Apply date filter if available
-        if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
-            try:
-                filtered_df_copy = filtered_df.copy()
-                filtered_df_copy['sent_time'] = pd.to_datetime(filtered_df_copy['sent_time'], errors='coerce')
-                filtered_df = filtered_df_copy[
-                    (filtered_df_copy['sent_time'].dt.date >= date_range[0]) &
-                    (filtered_df_copy['sent_time'].dt.date <= date_range[1])
-                ]
-                # Keep original columns
-                filtered_df = df.loc[filtered_df.index]
-            except:
-                pass
-        
-        st.dataframe(
-            filtered_df,
-            use_container_width=True,
-            height=400,
-            hide_index=True
+    with col4:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Khác</div>
+                <div class="metric-value" style="color: var(--danger);">{error}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        
-        # Export buttons
-        col_exp1, col_exp2 = st.columns(2)
-        with col_exp1:
-            csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="Tải Excel (CSV)",
-                data=csv,
-                file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp2:
-            if st.button("Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
-                with st.spinner("Đang push dữ liệu lên Google Sheets..."):
-                    result = push_shipments_to_sheets(filtered_df, append_mode=True)
-                    if result['success']:
-                        st.success(f"✅ {result['message']}")
-                        st.balloons()
-                    else:
-                        st.error(f"❌ {result['message']}")
 
 
-def show_audit_log():
-    """Show audit log of all changes"""
-    st.header("📋 Lịch Sử Thay Đổi")
-    
-    # Get audit log
-    limit = st.slider("Số lượng bản ghi:", 10, 500, 100, 10)
-    df = get_audit_log(limit=limit)
-    
-    if df.empty:
-        st.info("📭 Chưa có lịch sử thay đổi")
-        return
-    
-    # Display audit log
-    st.dataframe(
-        df,
-        use_container_width=True,
-        height=500,
-        hide_index=True
-    )
-    
-    # Export button
-    csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 Tải Excel (CSV)",
-        data=csv,
-        file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
+def get_status_display(status: str) -> Tuple[str, str]:
+    """Trả về (nhãn hiển thị kiểu Shopee, mô tả) cho trạng thái."""
+    display = STATUS_ALIASES.get(status, status)
+    desc = STATUS_DESCRIPTIONS.get(status, "Đơn hàng đang được xử lý.")
+    return display, desc
+
+
+def build_status_steps(history_statuses: List[str], current_status: str) -> List[str]:
+    """Tạo danh sách step theo flow, chỉ cho những trạng thái đã xuất hiện + hiện tại."""
+    seen = set()
+    steps: List[str] = []
+    target_statuses = history_statuses + [current_status]
+    for status in STATUS_FLOW:
+        if status in target_statuses and status not in seen:
+            steps.append(status)
+            seen.add(status)
+    if not steps:
+        steps.append(current_status or "Đang gửi")
+    return steps
+
+
+def render_shopee_status_card(current_status: str) -> None:
+    label, desc = get_status_display(current_status)
+    st.markdown(
+        f"""
+        <div class="shopee-status-card">
+            <p class="shopee-status-title">{label}</p>
+            <p class="shopee-status-desc">{desc}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
-def show_manage_shipments():
-    """Show screen to manage all shipments with edit functionality"""
-    ensure_label_defaults()
-    st.header("📋 Quản Lý Phiếu Gửi Hàng")
-    current_user = get_current_user()
-    
-    # Quick actions
-    with st.expander("➕ Tạo phiếu (nhập tay)", expanded=False):
-        st.write("Chuyển sang tab 'Quét QR' để tạo phiếu từ QR, hoặc dùng form dưới đây.")
-        with st.form("manual_create_form"):
-            qr = st.text_input("Mã QR Code *")
-            imei = st.text_input("IMEI *")
-            device_name = st.text_input("Tên thiết bị *")
-            capacity = st.text_input("Dung lượng *")
-            suppliers_df = get_suppliers()
-            # Nếu tài khoản cửa hàng: khóa NCC (không chọn)
-            store_user = is_store_user()
-            if store_user:
-                supplier = st.selectbox("Nhà cung cấp (khóa với cửa hàng)", ["(Cửa hàng không chọn NCC)"], index=0, disabled=True)
-            else:
-                supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
-            uploaded_image_manual = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_manual")
-            
-            # Trường cửa hàng
-            store_name = None
-            if store_user:
-                store_name = get_store_name_from_username(current_user)
-                store_input = st.text_input("Cửa hàng:", value=store_name, disabled=True)
-            else:
-                store_input = st.text_input("Cửa hàng (nếu có):", value="")
-                if store_input.strip():
-                    store_name = store_input.strip()
-            
-            notes = st.text_area("Ghi chú")
-            if st.form_submit_button("💾 Lưu phiếu mới", type="primary"):
-                if not qr or not imei or not device_name or not capacity:
-                    st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Dung lượng")
-                else:
-                    image_url = None
-                    if uploaded_image_manual:
-                        urls = []
-                        for idx, f in enumerate(uploaded_image_manual, start=1):
-                            file_bytes = f.getvalue()
-                            mime = f.type or "image/jpeg"
-                            orig_name = f.name or "image.jpg"
-                            ext = ""
-                            if "." in orig_name:
-                                ext = orig_name.split(".")[-1]
-                            if not ext:
-                                ext = "jpg"
-                            sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
-                            drive_filename = f"{sanitized_qr}_{idx}.{ext}"
-                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                            if upload_res['success']:
-                                urls.append(upload_res['url'])
-                            else:
-                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                st.stop()
-                        if urls:
-                            image_url = ";".join(urls)
-
-                    # Tài khoản cửa hàng: mặc định Chuyển kho, khóa NCC
-                    default_status = 'Chuyển kho' if store_user else 'Đang gửi'
-                    res = save_shipment(
-                        qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
-                        supplier if not store_user else 'Cửa hàng', current_user, notes if notes else None,
-                        status=default_status, store_name=store_name, image_url=image_url
-                    )
-                    if res['success']:
-                        st.success(f"Đã tạo phiếu #{res['id']}")
-                        # Refresh list and metrics
-                        st.session_state['label_picker_open'] = False
-                        st.rerun()
-                    else:
-                        st.error(f"Lỗi: {res['error']}")
-
-    with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
-        st.write("Upload file Excel (bỏ qua header, đọc từ hàng 2) với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AI=Ghi chú (Dung lượng).")
-        suppliers_df = get_suppliers()
-        supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
-        bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
-        uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx", "xls"], key="bulk_excel")
-        if uploaded_file is not None:
-            if st.button("Xử lý file", type="primary", key="bulk_process"):
-                try:
-                    df = pd.read_excel(uploaded_file, header=None)
-                    # Column indices: B=1, Z=25, AF=31, AI=34 (0-based). Bỏ dòng 0 (header)
-                    if df.shape[0] > 0:
-                        df = df.iloc[1:]
-                    needed_cols = {1: 'qr_code', 25: 'device_name', 31: 'imei', 34: 'capacity'}
-                    missing_cols = [c for c in needed_cols if c >= df.shape[1]]
-                    if missing_cols:
-                        st.error("File không đủ cột cần thiết (B,Z,AF,AI).")
-                    else:
-                        df = df[list(needed_cols.keys())]
-                        df.rename(columns=needed_cols, inplace=True)
-                        success, fail = 0, 0
-                        errors = []
-                        for idx, row in df.iterrows():
-                            qr_val = str(row.get('qr_code') or '').strip()
-                            imei_val = str(row.get('imei') or '').strip()
-                            device_val = str(row.get('device_name') or '').strip()
-                            cap_val = str(row.get('capacity') or '').strip()
-                            if not qr_val:
-                                fail += 1
-                                errors.append(f"Dòng {idx+1}: thiếu Mã QR")
-                                continue
-                            if not imei_val or not device_val or not cap_val:
-                                fail += 1
-                                errors.append(f"Dòng {idx+1}: thiếu IMEI/Tên/Dung lượng")
-                                continue
-                            # Xác định store_name nếu là user cửa hàng
-                            store_user = is_store_user()
-                            store_name = None
-                            if store_user:
-                                store_name = get_store_name_from_username(current_user)
-                            
-                            res = save_shipment(
-                                qr_code=qr_val,
-                                imei=imei_val,
-                                device_name=device_val,
-                                capacity=cap_val,
-                                supplier=bulk_supplier if bulk_supplier != "Chưa chọn" else "Chưa chọn",
-                                created_by=current_user,
-                                notes=None,
-                                status="Phiếu tạm",
-                                store_name=store_name
-                            )
-                            if res['success']:
-                                success += 1
-                            else:
-                                fail += 1
-                                errors.append(f"Dòng {idx+1}: {res['error']}")
-                        st.success(f"Đã tạo {success} phiếu. Lỗi: {fail}.")
-                        if errors:
-                            with st.expander("Chi tiết lỗi", expanded=False):
-                                for e in errors:
-                                    st.write("- " + e)
-                except Exception as e:
-                    st.error(f"Lỗi đọc file: {e}")
-
-    # Get all shipments
-    df = get_all_shipments()
-    
-    if df.empty:
-        st.info("📭 Chưa có phiếu gửi hàng nào")
-        return
-    
-    # In-tem button placed above filters
-    col_print, col_push = st.columns([1, 3])
-    with col_print:
-        if st.button("🖨️ In tem (chọn phiếu)", key="open_label_picker"):
-            st.session_state['label_picker_open'] = True
-    with col_push:
-        st.write("")  # spacer
-
-    # Label picker "popup" (inline container)
-    if st.session_state.get('label_picker_open'):
-        st.markdown("### Chọn phiếu để in tem")
-        st.caption("Tìm kiếm theo mã QR/thiết bị/IMEI, chọn nhiều phiếu, sau đó bấm In.")
-        all_options = df.apply(
-            lambda r: {
-                "id": r['id'],
-                "label": f"{r['qr_code']} | {r['device_name']} | {r['imei']}"
-            },
-            axis=1
-        ).tolist()
-
-        search_term = st.text_input("Tìm mã QR / thiết bị / IMEI", key="label_search_term")
-        if search_term:
-            term = search_term.lower().strip()
-            filtered_opts = [o for o in all_options if term in o['label'].lower()]
-        else:
-            filtered_opts = all_options
-
-        option_labels = [o['label'] for o in filtered_opts]
-        option_ids = [o['id'] for o in filtered_opts]
-
-        selected_labels = st.multiselect(
-            "Chọn phiếu:",
-            options=option_labels,
-            default=st.session_state.get('label_picker_selected', []),
-            key="label_picker_multiselect"
-        )
-
-        # Persist selection
-        st.session_state['label_picker_selected'] = selected_labels
-        selected_ids = [option_ids[option_labels.index(lbl)] for lbl in selected_labels] if selected_labels else []
-
-        st.write(f"Đã chọn: {len(selected_ids)} phiếu")
-        col_lp1, col_lp2, col_lp3 = st.columns([1, 1, 2])
-        with col_lp1:
-            if st.button("🖨️ In các phiếu đã chọn", key="label_picker_print"):
-                selected_shipments = df[df['id'].isin(selected_ids)].to_dict(orient='records')
-                if selected_shipments:
-                    st.success(f"Đang chuẩn bị {len(selected_shipments)} tem...")
-                    render_labels_bulk(selected_shipments)
-                else:
-                    st.warning("Chưa chọn phiếu nào để in.")
-        with col_lp2:
-            if st.button("Đóng", key="label_picker_close"):
-                st.session_state['label_picker_open'] = False
-        with col_lp3:
-            st.write("")
-
-        st.divider()
-
-    with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
-        col1, col2, col3 = st.columns([1, 1, 1])
-        
-        with col1:
-            filter_status = st.multiselect(
-                "Trạng thái:",
-                STATUS_VALUES,
-                default=STATUS_VALUES,
-                key="manage_filter_status"
-            )
-        
-        with col2:
-            suppliers_list = df['supplier'].unique().tolist()
-            filter_supplier = st.multiselect(
-                "NCC:",
-                suppliers_list,
-                default=suppliers_list,
-                key="manage_filter_supplier"
-            )
-        
-        with col3:
-            search_qr = st.text_input("Mã QR:", key="search_qr")
-    
-    # Apply filters
-    filtered_df = df[
-        (df['status'].isin(filter_status)) &
-        (df['supplier'].isin(filter_supplier))
-    ]
-    
-    if search_qr:
-        filtered_df = filtered_df[filtered_df['qr_code'].str.contains(search_qr, case=False, na=False)]
-    
-    # Display shipments
-    st.subheader(f"Tổng số: {len(filtered_df)} phiếu")
-    
-    for idx, row in filtered_df.iterrows():
-        with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.write("**Thông tin phiếu:**")
-                info_col1, info_col2 = st.columns(2)
-                
-                with info_col1:
-                    st.write(f"**Mã QR:** {row['qr_code']}")
-                    st.write(f"**IMEI:** {row['imei']}")
-                    st.write(f"**Tên thiết bị:** {row['device_name']}")
-                    st.write(f"**Dung lượng:** {row['capacity']}")
-                
-                with info_col2:
-                    st.write(f"**NCC:** {row['supplier']}")
-                    st.write(f"**Trạng thái:** {row['status']}")
-                    if pd.notna(row.get('store_name')) and row.get('store_name'):
-                        st.write(f"**Cửa hàng:** {row['store_name']}")
-                    st.write(f"**Thời gian gửi:** {row['sent_time']}")
-                    if pd.notna(row['received_time']):
-                        st.write(f"**Thời gian nhận:** {row['received_time']}")
-                    if pd.notna(row.get('last_updated')) and row.get('last_updated'):
-                        st.write(f"**Cập nhật lúc:** {row['last_updated']}")
-                    st.write(f"**Người tạo:** {row['created_by']}")
-                    if pd.notna(row['updated_by']):
-                        st.write(f"**Người cập nhật:** {row['updated_by']}")
-                
-                if pd.notna(row['notes']) and row['notes']:
-                    st.write(f"**Ghi chú:** {row['notes']}")
-
-                # Print label button
-                print_btn_key = f"print_label_{row['id']}"
-                if st.button("🖨️ In tem QR", key=print_btn_key):
-                    st.session_state['label_preview_id'] = row['id']
-                if st.session_state.get('label_preview_id') == row['id']:
-                    st.info("Xem trước tem. Bấm 'In tem' trong khung để in (chọn máy in/bkhổ giấy trong hộp thoại).")
-                    render_label_component(row)
-            
-            with col2:
-                # Image upload status
-                if not row.get('image_url'):
-                    st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
-                else:
-                    # Hỗ trợ nhiều ảnh (phân tách bằng ';')
-                    urls = str(row.get('image_url') or '').split(';')
-                    urls = [u for u in urls if u.strip()]
-                    if urls:
-                        for i, u in enumerate(urls):
-                            display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
-
-                edit_key = f'edit_shipment_{row["id"]}'
-                is_editing = st.session_state.get(edit_key, False)
-                
-                if st.button("✏️ Chỉnh sửa" if not is_editing else "❌ Hủy", key=f"btn_edit_{row['id']}"):
-                    st.session_state[edit_key] = not is_editing
-                    st.rerun()
-            
-            # Edit form
-            edit_key = f'edit_shipment_{row["id"]}'
-            if st.session_state.get(edit_key, False):
-                st.divider()
-                st.write("### ✏️ Chỉnh Sửa Phiếu")
-                
-                with st.form(f"edit_shipment_form_{row['id']}"):
-                    col_form1, col_form2 = st.columns(2)
-                    
-                    with col_form1:
-                        edit_qr_code = st.text_input("Mã QR Code:", value=row['qr_code'], key=f"edit_qr_{row['id']}")
-                        edit_imei = st.text_input("IMEI:", value=row['imei'], key=f"edit_imei_{row['id']}")
-                        edit_device_name = st.text_input("Tên thiết bị:", value=row['device_name'], key=f"edit_device_{row['id']}")
-                        edit_capacity = st.text_input("Dung lượng:", value=row['capacity'], key=f"edit_capacity_{row['id']}")
-                    
-                    with col_form2:
-                        suppliers_df = get_suppliers()
-                        current_supplier_idx = 0
-                        if suppliers_df['name'].tolist():
-                            try:
-                                current_supplier_idx = suppliers_df['name'].tolist().index(row['supplier'])
-                            except:
-                                pass
-                        
-                        edit_supplier = st.selectbox(
-                            "Nhà cung cấp:",
-                            suppliers_df['name'].tolist(),
-                            index=current_supplier_idx,
-                            key=f"edit_supplier_{row['id']}"
-                        )
-                        
-                        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
-                        status_options = STATUS_VALUES.copy()
-                        for _, supplier_row in suppliers_df.iterrows():
-                            supplier_name = supplier_row['name']
-                            send_status = f"Gửi {supplier_name}"
-                            if send_status not in status_options:
-                                status_options.append(send_status)
-                        
-                        current_status_idx = 0
-                        if row['status'] in status_options:
-                            current_status_idx = status_options.index(row['status'])
-                        
-                        edit_status = st.selectbox(
-                            "Trạng thái:",
-                            status_options,
-                            index=current_status_idx,
-                            key=f"edit_status_{row['id']}"
-                        )
-                        
-                        edit_store_name = st.text_input(
-                            "Cửa hàng:",
-                            value=row.get('store_name', '') if pd.notna(row.get('store_name')) else '',
-                            key=f"edit_store_{row['id']}",
-                            help="Tên cửa hàng (nếu có)"
-                        )
-                        
-                        edit_notes = st.text_area("Ghi chú:", value=row['notes'] if pd.notna(row['notes']) else '', key=f"edit_notes_{row['id']}")
-                        uploaded_image = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"upload_image_{row['id']}")
-                    
-                    col_submit1, col_submit2 = st.columns(2)
-                    with col_submit1:
-                        if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-                            current_user = get_current_user()
-
-                            image_url = row.get('image_url')
-                            if uploaded_image:
-                                urls = []
-                                for idx, f in enumerate(uploaded_image, start=1):
-                                    file_bytes = f.getvalue()
-                                    mime = f.type or "image/jpeg"
-                                    orig_name = f.name or "image.jpg"
-                                    ext = ""
-                                    if "." in orig_name:
-                                        ext = orig_name.split(".")[-1]
-                                    if not ext:
-                                        ext = "jpg"
-                                    sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
-                                    drive_filename = f"{sanitized_qr}_{idx}.{ext}"
-                                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                    if upload_res['success']:
-                                        urls.append(upload_res['url'])
-                                    else:
-                                        st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                        st.stop()
-                                if urls:
-                                    image_url = ";".join(urls)
-
-                            result = update_shipment(
-                                shipment_id=row['id'],
-                                qr_code=edit_qr_code.strip(),
-                                imei=edit_imei.strip(),
-                                device_name=edit_device_name.strip(),
-                                capacity=edit_capacity.strip(),
-                                supplier=edit_supplier,
-                                status=edit_status,
-                                notes=edit_notes.strip() if edit_notes.strip() else None,
-                                updated_by=current_user,
-                                image_url=image_url,
-                                store_name=edit_store_name.strip() if edit_store_name.strip() else None
-                            )
-                            
-                            if result['success']:
-                                st.success("✅ Đã cập nhật thành công!")
-                                # Notify Telegram if status is Đã nhận hoặc Hoàn thành chuyển cửa hàng
-                                updated = get_shipment_by_qr_code(edit_qr_code.strip())
-                                if updated and updated.get('status') in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
-                                    res = notify_shipment_if_received(
-                                        updated['id'],
-                                        force=not row.get('telegram_message_id'),
-                                        is_update_image=(uploaded_image is not None)
-                                    )
-                                    if res and not res.get('success'):
-                                        st.warning(f"Không gửi được Telegram: {res.get('error')}")
-                                edit_key = f'edit_shipment_{row["id"]}'
-                                if edit_key in st.session_state:
-                                    del st.session_state[edit_key]
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {result['error']}")
-                    
-                    with col_submit2:
-                        if st.form_submit_button("❌ Hủy"):
-                            edit_key = f'edit_shipment_{row["id"]}'
-                            if edit_key in st.session_state:
-                                del st.session_state[edit_key]
-                            st.rerun()
-            
-            st.divider()
-
-
-def show_settings_screen():
-    """Show settings screen for admin to manage suppliers"""
-    if not is_admin():
-        st.error("❌ Chỉ có quyền admin mới có thể truy cập trang này!")
-        return
-    
-    st.header("⚙️ Cài Đặt")
-    
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📋 Danh Sách NCC", "➕ Thêm NCC Mới", "☁️ Google Sheets", "🔑 Tài Khoản", "🖨️ In tem", "🗑️ Database"])
-    
-    with tab1:
-        show_suppliers_list()
-    
-    with tab2:
-        show_add_supplier_form()
-    
-    with tab3:
-        show_google_sheets_settings()
-
-    with tab4:
-        show_user_management()
-
-    with tab5:
-        show_label_settings()
-    
-    with tab6:
-        show_database_management()
-
-
-def show_suppliers_list():
-    """Show list of all suppliers with edit/delete options"""
-    st.subheader("📋 Danh Sách Nhà Cung Cấp")
-    
-    # Get all suppliers
-    df = get_all_suppliers()
-    
-    if df.empty:
-        st.info("📭 Chưa có nhà cung cấp nào trong hệ thống")
-        return
-    
-    # Display suppliers
-    for idx, row in df.iterrows():
-        with st.container():
-            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
-            
-            with col1:
-                status_icon = "✅" if row['is_active'] else "❌"
-                st.write(f"**{status_icon} {row['name']}**")
-            
-            with col2:
-                st.write(f"📞 {row['contact'] or 'N/A'}")
-            
-            with col3:
-                st.write(f"📍 {row['address'] or 'N/A'}")
-            
-            with col4:
-                if st.button("✏️ Sửa", key=f"edit_{row['id']}"):
-                    st.session_state[f'edit_supplier_{row["id"]}'] = True
-                    st.rerun()
-            
-            with col5:
-                if row['is_active']:
-                    if st.button("🗑️ Xóa", key=f"delete_{row['id']}"):
-                        result = delete_supplier(row['id'])
-                        if result['success']:
-                            st.success(f"✅ Đã xóa nhà cung cấp: {row['name']}")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['error']}")
-                else:
-                    if st.button("♻️ Khôi phục", key=f"restore_{row['id']}"):
-                        result = update_supplier(row['id'], is_active=True)
-                        if result['success']:
-                            st.success(f"✅ Đã khôi phục nhà cung cấp: {row['name']}")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['error']}")
-            
-            # Edit form (if edit button clicked)
-            if st.session_state.get(f'edit_supplier_{row["id"]}', False):
-                with st.expander(f"✏️ Sửa thông tin: {row['name']}", expanded=True):
-                    with st.form(f"edit_form_{row['id']}"):
-                        new_name = st.text_input("Tên nhà cung cấp:", value=row['name'], key=f"edit_name_{row['id']}")
-                        new_contact = st.text_input("Liên hệ:", value=row['contact'] or '', key=f"edit_contact_{row['id']}")
-                        new_address = st.text_input("Địa chỉ:", value=row['address'] or '', key=f"edit_address_{row['id']}")
-                        new_active = st.checkbox("Đang hoạt động", value=bool(row['is_active']), key=f"edit_active_{row['id']}")
-                        
-                        col_submit1, col_submit2 = st.columns(2)
-                        with col_submit1:
-                            if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-                                result = update_supplier(
-                                    row['id'],
-                                    name=new_name.strip() if new_name.strip() else None,
-                                    contact=new_contact.strip() if new_contact.strip() else None,
-                                    address=new_address.strip() if new_address.strip() else None,
-                                    is_active=new_active
-                                )
-                                if result['success']:
-                                    st.success("✅ Đã cập nhật thành công!")
-                                    st.session_state[f'edit_supplier_{row["id"]}'] = False
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ {result['error']}")
-                        
-                        with col_submit2:
-                            if st.form_submit_button("❌ Hủy"):
-                                st.session_state[f'edit_supplier_{row["id"]}'] = False
-                                st.rerun()
-            
-            st.divider()
-
-
-def show_add_supplier_form():
-    """Show form to add new supplier"""
-    st.subheader("➕ Thêm Nhà Cung Cấp Mới")
-    
-    with st.form("add_supplier_form"):
-        name = st.text_input("Tên nhà cung cấp *", help="Tên nhà cung cấp (bắt buộc)")
-        contact = st.text_input("Liên hệ", help="Số điện thoại hoặc email")
-        address = st.text_input("Địa chỉ", help="Địa chỉ nhà cung cấp")
-        
-        if st.form_submit_button("➕ Thêm Nhà Cung Cấp", type="primary"):
-            if not name.strip():
-                st.error("❌ Vui lòng nhập tên nhà cung cấp!")
-            else:
-                result = add_supplier(
-                    name=name.strip(),
-                    contact=contact.strip() if contact.strip() else None,
-                    address=address.strip() if address.strip() else None
-                )
-                
-                if result['success']:
-                    st.success(f"✅ Đã thêm nhà cung cấp: {name} (ID: {result['id']})")
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['error']}")
-
-
-def show_user_management():
-    """Allow admin to create/update user passwords"""
-    st.subheader("🔑 Quản Lý Tài Khoản")
-
-    with st.form("user_form"):
-        username = st.text_input("Tên đăng nhập *", help="Ví dụ: admin, user, staff, cuahang1")
-        password = st.text_input("Mật khẩu mới *", type="password")
-        confirm = st.text_input("Nhập lại mật khẩu *", type="password")
-        
-        col_check1, col_check2 = st.columns(2)
-        with col_check1:
-            is_admin_flag = st.checkbox("Cấp quyền admin", value=False)
-        with col_check2:
-            is_store_flag = st.checkbox("Cấp quyền cửa hàng", value=False, help="Tài khoản này sẽ có quyền cửa hàng")
-
-        submitted = st.form_submit_button("💾 Lưu tài khoản", type="primary")
-        if submitted:
-            if not username.strip():
-                st.error("❌ Vui lòng nhập tên đăng nhập")
-            elif not password:
-                st.error("❌ Vui lòng nhập mật khẩu")
-            elif password != confirm:
-                st.error("❌ Mật khẩu nhập lại không khớp")
-            else:
-                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag)
-                if result['success']:
-                    store_msg = " (Cửa hàng)" if is_store_flag else ""
-                    admin_msg = " (Admin)" if is_admin_flag else ""
-                    st.success(f"✅ Đã lưu tài khoản thành công{admin_msg}{store_msg}")
-                else:
-                    st.error(f"❌ {result['error']}")
-
-    st.divider()
-    st.subheader("📋 Danh sách tài khoản")
-    users_df = get_all_users()
-    if users_df.empty:
-        st.info("📭 Chưa có tài khoản nào")
-        return
-
-    # Hide real password, show masked
-    users_df = users_df.copy()
-    users_df['password'] = users_df['password'].apply(lambda x: '******' if x else '')
-    users_df['is_admin'] = users_df['is_admin'].apply(lambda x: "Admin" if x else "User")
-    
-    # Format is_store column
-    if 'is_store' in users_df.columns:
-        users_df['is_store'] = users_df['is_store'].apply(lambda x: "Cửa hàng" if x else "Không")
-    else:
-        users_df['is_store'] = "Không"
-
-    st.dataframe(
-        users_df,
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-def show_database_management():
-    """Database management - chỉ admin mới có quyền"""
-    st.subheader("🗑️ Quản Lý Database")
-    
-    st.warning("⚠️ **CẢNH BÁO:** Chức năng này sẽ xóa TOÀN BỘ dữ liệu trong database!")
-    
-    # Hiển thị thống kê database hiện tại
-    st.markdown("### Thống kê Database hiện tại")
-    
+def render_status_timeline(history_statuses: List[str], current_status: str) -> None:
+    steps = build_status_steps(history_statuses, current_status)
     try:
-        df_shipments = get_all_shipments()
-        df_transfers = get_all_transfer_slips()
-        df_suppliers = get_all_suppliers()
-        df_users = get_all_users()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Số phiếu gửi hàng", len(df_shipments))
-        with col2:
-            st.metric("Số phiếu chuyển", len(df_transfers))
-        with col3:
-            st.metric("Số nhà cung cấp", len(df_suppliers))
-        with col4:
-            st.metric("Số tài khoản", len(df_users))
-    except Exception as e:
-        st.error(f"Lỗi khi lấy thống kê: {str(e)}")
-    
-    st.divider()
-    
-    # Form xóa database
-    st.markdown("### Xóa toàn bộ dữ liệu")
-    
-    st.error("""
-    **⚠️ CẢNH BÁO NGHIÊM TRỌNG:**
-    - Hành động này sẽ xóa **TẤT CẢ** dữ liệu trong database
-    - Bao gồm: tất cả phiếu gửi hàng, phiếu chuyển, lịch sử thay đổi
-    - Dữ liệu đã xóa **KHÔNG THỂ KHÔI PHỤC**
-    - Chỉ giữ lại cấu trúc bảng và dữ liệu mặc định (users, suppliers)
-    """)
-    
-    # Xác nhận kép
-    confirm_text = st.text_input(
-        "Nhập 'XÓA TẤT CẢ' để xác nhận:",
-        key="confirm_delete_db",
-        help="Phải nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận"
-    )
-    
-    if confirm_text == "XÓA TẤT CẢ":
-        st.error("⚠️ Bạn đã xác nhận muốn xóa toàn bộ dữ liệu!")
-        
-        if st.button("🗑️ XÓA TOÀN BỘ DATABASE", type="primary", key="delete_db_btn"):
-            with st.spinner("Đang xóa dữ liệu..."):
-                result = clear_all_data()
-                
-                if result['success']:
-                    st.success("✅ Đã xóa toàn bộ dữ liệu thành công!")
-                    st.info("Database đã được khôi phục về trạng thái ban đầu với dữ liệu mặc định.")
-                    st.balloons()
-                    # Clear session state để reload
-                    for key in list(st.session_state.keys()):
-                        if key != 'username':  # Giữ lại thông tin đăng nhập
-                            del st.session_state[key]
-                    st.rerun()
-                else:
-                    st.error(f"❌ Lỗi khi xóa database: {result['error']}")
-    else:
-        if confirm_text:
-            st.warning("Vui lòng nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận")
+        active_idx = steps.index(current_status)
+    except ValueError:
+        active_idx = len(steps) - 1
+
+    timeline_html = '<div class="status-timeline">'
+    for idx, status in enumerate(steps):
+        state_class = "current" if idx == active_idx else "done" if idx < active_idx else "upcoming"
+        label, desc = get_status_display(status)
+        connector = '<div class="step-connector"></div>' if idx < len(steps) - 1 else ""
+        timeline_html += f"""
+            <div class="timeline-step {state_class}">
+                <div class="step-dot"></div>
+                {connector}
+                <div class="step-label">{label}</div>
+                <div class="step-sub">{desc}</div>
+            </div>
+        """
+    timeline_html += "</div>"
+    st.markdown(timeline_html, unsafe_allow_html=True)
 
 
-def show_google_sheets_settings():
-    """Show Google Sheets settings and test connection"""
-    st.subheader("☁️ Cài Đặt Google Sheets")
-    
-    st.info("""
-    **Hướng dẫn:**
-    1. Đảm bảo file `service_account.json` đã được cấu hình đúng
-    2. Google Sheet đã được chia sẻ với service account email
-    3. Click nút "Kiểm tra kết nối" để test
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🔍 Kiểm tra kết nối", type="primary", key="test_gs_connection"):
-            with st.spinner("Đang kiểm tra kết nối Google Sheets..."):
-                result = test_connection()
-                if result['success']:
-                    st.success(f"✅ {result['message']}")
-                    if 'worksheet' in result:
-                        st.info(f"📋 Worksheet: {result['worksheet']}")
-                else:
-                    st.error(f"❌ {result['message']}")
-    
-    with col2:
-        st.write("")  # Spacing
-    
-    st.divider()
-    
-    # Push all data option
-    st.subheader("📤 Push dữ liệu")
-    
-    col_push1, col_push2 = st.columns(2)
-    
-    with col_push1:
-        push_mode = st.radio(
-            "Chế độ push:",
-            ["Thêm mới (Append)", "Thay thế toàn bộ (Replace)"],
-            key="push_mode"
-        )
-    
-    with col_push2:
-        st.write("")  # Spacing
-    
-    if st.button("📤 Push tất cả dữ liệu lên Google Sheets", type="primary", key="push_all_data"):
-        with st.spinner("Đang push tất cả dữ liệu lên Google Sheets..."):
-            df = get_all_shipments()
-            if df.empty:
-                st.warning("⚠️ Không có dữ liệu để push")
-            else:
-                append_mode = (push_mode == "Thêm mới (Append)")
-                result = push_shipments_to_sheets(df, append_mode=append_mode)
-                if result['success']:
-                    st.success(f"✅ {result['message']}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ {result['message']}")
-
-
-def show_transfer_slip_screen():
-    """Screen for scanning QR codes and adding to transfer slip"""
-    current_user = get_current_user()
-    st.header("Phiếu Chuyển")
-    
-    tab1, tab2 = st.tabs(["Quét & Thêm Máy", "Quản Lý Phiếu Chuyển"])
-    
-    with tab1:
-        show_transfer_slip_scan(current_user)
-    
-    with tab2:
-        show_manage_transfer_slips()
-
-
-def show_transfer_slip_scan(current_user):
-    """Screen for scanning QR codes and adding to transfer slip"""
-    # Get or create active transfer slip
-    active_slip = get_active_transfer_slip(current_user)
-    
-    if not active_slip:
-        if st.button("Tạo Phiếu Chuyển Mới", type="primary"):
-            result = create_transfer_slip(current_user)
-            if result['success']:
-                st.success(f"Đã tạo phiếu chuyển: {result['transfer_code']}")
-                st.rerun()
-            else:
-                st.error(f"Lỗi: {result['error']}")
+def render_recent_shipments(limit: int = 10) -> None:
+    df = get_all_shipments().head(limit)
+    if df.empty:
+        st.info("Chưa có phiếu nào. Hãy tạo mới ở tab Quét QR.")
         return
+    st.dataframe(df[["qr_code", "imei", "device_name", "supplier", "status", "sent_time"]])
+
+
+# -------------------- PAGES --------------------
+def page_home():
+    show_header()
+    show_statistics()
+    st.markdown("### Phiếu gần đây")
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    render_recent_shipments()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def page_send():
+    # Initialize session state
+    if "qr_send_value" not in st.session_state:
+        st.session_state["qr_send_value"] = ""
+    if "imei_send_value" not in st.session_state:
+        st.session_state["imei_send_value"] = ""
+    if "device_name_send_value" not in st.session_state:
+        st.session_state["device_name_send_value"] = ""
+    if "capacity_send_value" not in st.session_state:
+        st.session_state["capacity_send_value"] = ""
+
+    st.markdown("### Quét QR Gửi")
     
-    transfer_slip_id = active_slip['id']
-    transfer_code = active_slip['transfer_code']
+    # Camera box luôn hiển thị ở đầu trang
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("#### 📷 Quét QR Code")
     
-    st.info(f"**Phiếu chuyển đang hoạt động:** {transfer_code}")
-    
-    # Get items in transfer slip
-    items_df = get_transfer_slip_items(transfer_slip_id)
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Quét QR để thêm máy vào phiếu")
+    # Kiểm tra dependencies
+    if any(dep is None for dep in [av, cv2, np, decode, webrtc_streamer, WebRtcMode]):
+        st.error("⚠️ Camera không khả dụng!")
+        st.warning("Cần cài đặt các thư viện sau:")
+        st.code("pip install streamlit-webrtc opencv-python-headless pyzbar av", language="bash")
+    else:
+        # Thông báo hướng dẫn
+        st.info("📷 Camera sẵn sàng. Đưa QR code vào khung hình để quét tự động.")
         
-        # Camera for scanning
-        if 'show_camera_transfer' not in st.session_state:
-            st.session_state['show_camera_transfer'] = False
-        
-        if st.button("Bắt đầu quét", type="primary", key="start_scan_transfer"):
-            st.session_state['show_camera_transfer'] = True
-            st.rerun()
-        
-        if st.session_state['show_camera_transfer']:
-            if st.button("Dừng quét", key="stop_scan_transfer"):
-                st.session_state['show_camera_transfer'] = False
-                st.rerun()
-            
-            picture = st.camera_input("Quét mã QR", key="transfer_camera")
-            
-            if picture is not None:
-                with st.spinner("Đang xử lý..."):
-                    try:
-                        image = Image.open(picture)
-                        qr_text = decode_qr_from_image(image)
-                        
-                        if qr_text:
-                            # Chỉ lấy mã QR (toàn bộ chuỗi quét được)
-                            qr_code = qr_text.strip()
-                            
-                            if qr_code:
-                                # Find shipment
-                                shipment = get_shipment_by_qr_code(qr_code)
-                                if shipment:
-                                    # Add to transfer slip
-                                    result = add_shipment_to_transfer_slip(transfer_slip_id, shipment['id'])
-                                    if result['success']:
-                                        st.success(f"Đã thêm máy {qr_code} vào phiếu chuyển")
-                                        st.rerun()
-                                    else:
-                                        st.error(f"Lỗi: {result['error']}")
-                                else:
-                                    st.warning(f"Không tìm thấy phiếu với mã QR: {qr_code}")
-                    except Exception as e:
-                        st.error(f"Lỗi: {str(e)}")
-    
-    with col2:
-        st.subheader(f"Danh sách máy ({len(items_df)} máy)")
-        
-        if not items_df.empty:
-            for idx, row in items_df.iterrows():
-                st.write(f"• {row['qr_code']} - {row['device_name']}")
-        
-        # Show image if transfer slip has one
-        # Chỉ tải ảnh khi đang xem phiếu chuyển này
-        if active_slip.get('image_url'):
-            st.divider()
-            st.subheader("Ảnh phiếu chuyển")
-            display_drive_image(active_slip['image_url'], width=250, caption="Ảnh phiếu chuyển")
-        
-        st.divider()
-        
-        # Complete transfer slip
-        if len(items_df) > 0:
-            st.subheader("Hoàn thành phiếu chuyển")
-            
-            new_status = st.selectbox(
-                "Trạng thái mới cho các máy:",
-                STATUS_VALUES,
-                index=STATUS_VALUES.index('Chuyển kho') if 'Chuyển kho' in STATUS_VALUES else 0,
-                key="transfer_status"
+        # Box vuông để hiển thị camera - dùng container của Streamlit
+        with st.container():
+            st.markdown(
+                """
+                <div style="
+                    width: 100%;
+                    max-width: 500px;
+                    min-height: 500px;
+                    aspect-ratio: 1;
+                    margin: 1.5rem auto;
+                    background: #000;
+                    border: 3px solid var(--primary);
+                    border-radius: 12px;
+                    overflow: visible;
+                    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+                    position: relative;
+                " id="camera-box-send">
+                """,
+                unsafe_allow_html=True,
             )
             
-            uploaded_image = st.file_uploader("Upload ảnh phiếu chuyển", type=["png", "jpg", "jpeg"], key="transfer_image")
+            # Render camera trực tiếp - luôn hiển thị
+            qr_code_cam = qrcode_scanner("qr-camera-send", show=True)
             
-            notes = st.text_area("Ghi chú", key="transfer_notes")
-            
-            if st.button("Hoàn thành phiếu chuyển", type="primary", key="complete_transfer"):
-                image_url = None
-                
-                if uploaded_image is not None:
-                    with st.spinner("Đang upload ảnh..."):
-                        file_bytes = uploaded_image.getvalue()
-                        mime = uploaded_image.type or "image/jpeg"
-                        ext = uploaded_image.name.split(".")[-1] if "." in uploaded_image.name else "jpg"
-                        drive_filename = f"{transfer_code}.{ext}"
-                        upload_res = upload_file_to_transfer_folder(file_bytes, drive_filename, mime)
-                        if upload_res['success']:
-                            image_url = upload_res['url']
-                        else:
-                            st.error(f"Upload ảnh thất bại: {upload_res['error']}")
-                            st.stop()
-                
-                # Update transfer slip
-                update_result = update_transfer_slip(
-                    transfer_slip_id,
-                    status='Đã hoàn thành',
-                    image_url=image_url,
-                    completed_by=current_user,
-                    notes=notes if notes else None
-                )
-                
-                if update_result['success']:
-                    # Update all shipments status
-                    status_result = update_transfer_slip_shipments_status(transfer_slip_id, new_status)
-                    
-                    if status_result['success']:
-                        # Send Telegram notification
-                        from telegram_helpers import send_transfer_slip_notification
-                        telegram_result = send_transfer_slip_notification(transfer_slip_id)
-                        
-                        if telegram_result.get('success'):
-                            st.success("Đã hoàn thành phiếu chuyển và gửi thông báo Telegram!")
-                        else:
-                            st.warning(f"Đã hoàn thành nhưng không gửi được Telegram: {telegram_result.get('error')}")
-                        
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error(f"Lỗi cập nhật trạng thái: {status_result['error']}")
-                else:
-                    st.error(f"Lỗi: {update_result['error']}")
-
-
-def show_manage_transfer_slips():
-    """Show all transfer slips for management"""
-    st.header("Quản Lý Phiếu Chuyển")
-    
-    df = get_all_transfer_slips()
-    
-    if df.empty:
-        st.info("Chưa có phiếu chuyển nào")
-        return
-    
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        height=400
-    )
-    
-    # View details
-    selected_id = st.selectbox(
-        "Chọn phiếu chuyển để xem chi tiết:",
-        df['id'].tolist(),
-        format_func=lambda x: f"{df[df['id']==x]['transfer_code'].iloc[0]} - {df[df['id']==x]['item_count'].iloc[0]} máy"
-    )
-    
-    if selected_id:
-        slip = get_transfer_slip(selected_id)
-        items_df = get_transfer_slip_items(selected_id)
+            st.markdown("</div>", unsafe_allow_html=True)
         
-        st.subheader(f"Chi tiết phiếu: {slip['transfer_code']}")
+        # Hướng dẫn sử dụng
+        st.markdown(
+            """
+            <div style="background: rgba(99, 102, 241, 0.1); border-radius: 8px; padding: 0.75rem; margin-top: 1rem; text-align: center; color: var(--text-secondary); font-size: 0.9rem;">
+                📷 Đưa QR code vào khung hình camera ở trên để quét tự động
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        # Xử lý khi quét thành công
+        if qr_code_cam:
+            # Parse QR code và điền thông tin
+            parsed = parse_qr_code(qr_code_cam)
+            st.session_state["qr_send_value"] = parsed["qr_code"]
+            st.session_state["imei_send_value"] = parsed["imei"]
+            st.session_state["device_name_send_value"] = parsed["device_name"]
+            st.session_state["capacity_send_value"] = parsed["capacity"]
+            st.success("✅ Quét thành công! Thông tin đã được điền vào form bên dưới.")
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Form với card design
+    st.markdown('<div class="form-container">', unsafe_allow_html=True)
+    with st.form("send_form"):
+        st.markdown("#### Thông tin phiếu gửi")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.write(f"**Trạng thái:** {slip['status']}")
-            st.write(f"**Người tạo:** {slip['created_by']}")
-            st.write(f"**Thời gian tạo:** {slip['created_at']}")
+            qr_code = st.text_input(
+                "Mã QR *",
+                value=st.session_state["qr_send_value"],
+                help="Quét hoặc nhập mã QR",
+                key="qr_code_send_input",
+                placeholder="Nhập hoặc quét mã QR",
+            )
         with col2:
-            if slip['completed_by']:
-                st.write(f"**Người hoàn thành:** {slip['completed_by']}")
-                st.write(f"**Thời gian hoàn thành:** {slip['completed_at']}")
-            if slip['image_url']:
-                # Tải ảnh ngay khi xem chi tiết phiếu chuyển (không lazy load)
-                display_drive_image(slip['image_url'], width=300, caption="Ảnh phiếu chuyển")
+            imei = st.text_input(
+                "IMEI",
+                value=st.session_state["imei_send_value"],
+                key="imei_send_input",
+                placeholder="Nhập IMEI",
+            )
         
-        st.subheader(f"Danh sách máy ({len(items_df)} máy)")
-        st.dataframe(items_df[['qr_code', 'imei', 'device_name', 'capacity', 'status']], use_container_width=True, hide_index=True)
+        col3, col4 = st.columns(2)
+        with col3:
+            device_name = st.text_input(
+                "Tên máy",
+                value=st.session_state["device_name_send_value"],
+                key="device_name_send_input",
+                placeholder="Ví dụ: iPhone 15 Pro Max",
+            )
+        with col4:
+            capacity = st.text_input(
+                "Dung lượng",
+                value=st.session_state["capacity_send_value"],
+                key="capacity_send_input",
+                placeholder="Ví dụ: 128GB",
+            )
+        
+        supplier = st.text_input(
+            "Nhà cung cấp",
+            placeholder="Nhập tên nhà cung cấp",
+        )
+        notes = st.text_area(
+            "Ghi chú",
+            height=100,
+            placeholder="Nhập ghi chú nếu có...",
+        )
+        
+        submitted = st.form_submit_button("💾 LƯU PHIẾU", use_container_width=True)
+        if submitted:
+            if not qr_code:
+                st.error("⚠️ Vui lòng nhập mã QR.")
+            else:
+                success, msg = insert_shipment(qr_code, imei, device_name, capacity, supplier, notes)
+                if success:
+                    st.success(msg)
+                    # Reset form sau khi lưu thành công
+                    st.session_state["qr_send_value"] = ""
+                    st.session_state["imei_send_value"] = ""
+                    st.session_state["device_name_send_value"] = ""
+                    st.session_state["capacity_send_value"] = ""
+                    st.rerun()
+                else:
+                    st.warning(msg)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
-def show_label_settings():
-    """Cài đặt kích thước tem QR (lưu trong session hiện tại)"""
-    ensure_label_defaults()
-    st.subheader("🖨️ Cài đặt tem QR")
-    st.info("Chọn kích thước tem (mm). Khi bấm In, trình duyệt sẽ mở hộp thoại chọn máy in/khổ giấy.")
+def page_receive():
+    # Initialize session state
+    if "show_camera_receive" not in st.session_state:
+        st.session_state["show_camera_receive"] = False
+    if "qr_recv_value" not in st.session_state:
+        st.session_state["qr_recv_value"] = ""
 
-    width_val = st.number_input(
-        "Chiều rộng tem (mm)",
-        min_value=20.0,
-        max_value=120.0,
-        value=float(st.session_state.get('label_width_mm', LABEL_DEFAULT_WIDTH_MM)),
-        step=1.0,
-        key="label_width_mm_input"
+    # Hiển thị camera ở đầu trang nếu được bật
+    if st.session_state["show_camera_receive"]:
+        st.markdown("---")
+        st.markdown("## 📷 Quét QR Code")
+        
+        # Kiểm tra dependencies
+        if any(dep is None for dep in [av, cv2, np, decode, webrtc_streamer, WebRtcMode]):
+            st.error("⚠️ Camera không khả dụng!")
+            st.warning("Cần cài đặt các thư viện sau:")
+            st.code("pip install streamlit-webrtc opencv-python-headless pyzbar av", language="bash")
+            if st.button("✕ Đóng", key="close_camera_error_receive"):
+                st.session_state["show_camera_receive"] = False
+                st.rerun()
+            return
+        
+        # Thông báo hướng dẫn
+        st.info("📷 Camera đang khởi động... Vui lòng cho phép trình duyệt truy cập camera khi được hỏi.")
+        
+        # Render camera
+        qr_code_cam = qrcode_scanner("qr-camera-receive", show=True)
+        
+        # Nút đóng camera
+        col_close1, col_close2 = st.columns([3, 1])
+        with col_close2:
+            if st.button("✕ Đóng Camera", key="close_camera_receive", use_container_width=True):
+                st.session_state["show_camera_receive"] = False
+                st.rerun()
+        
+        # Hướng dẫn sử dụng
+        st.markdown(
+            """
+            <div style="background: rgba(99, 102, 241, 0.1); border-radius: 8px; padding: 1rem; margin: 1rem 0; text-align: center; color: var(--text-secondary);">
+                📷 Đưa QR code vào khung hình camera ở trên để quét tự động
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        # Xử lý khi quét thành công
+        if qr_code_cam:
+            st.session_state["qr_recv_value"] = qr_code_cam
+            st.session_state["show_camera_receive"] = False
+            st.success("✅ Quét thành công!")
+            st.rerun()
+        
+        st.markdown("---")
+        return  # Dừng render phần còn lại khi đang hiển thị camera
+    
+    st.markdown("### Tiếp Nhận Hàng")
+    
+    # Nút Quét
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        scan_btn = st.button("📷 Quét QR", key="scan_button_receive", use_container_width=True)
+        if scan_btn:
+            st.session_state["show_camera_receive"] = True
+            st.rerun()
+
+    st.markdown('<div class="form-container">', unsafe_allow_html=True)
+    qr_code = st.text_input(
+        "Mã QR để cập nhật",
+        value=st.session_state["qr_recv_value"],
+        key="qr_code_receive_input",
+        placeholder="Quét hoặc nhập mã QR",
     )
-    height_val = st.number_input(
-        "Chiều cao tem (mm)",
-        min_value=15.0,
-        max_value=120.0,
-        value=float(st.session_state.get('label_height_mm', LABEL_DEFAULT_HEIGHT_MM)),
-        step=1.0,
-        key="label_height_mm_input"
+    
+    if qr_code:
+        shipment = get_shipment_by_qr(qr_code)
+        if shipment is None:
+            st.error("❌ Không tìm thấy phiếu với mã QR này.")
+        else:
+            st.markdown("#### Thông tin phiếu")
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            
+            col_info1, col_info2 = st.columns(2)
+            with col_info1:
+                st.write(f"**Mã QR:** {shipment['qr_code']}")
+                st.write(f"**IMEI:** {shipment['imei']}")
+                st.write(f"**Tên máy:** {shipment['device_name']}")
+            with col_info2:
+                st.write(f"**Dung lượng:** {shipment['capacity']}")
+                st.write(f"**Nhà cung cấp:** {shipment['supplier']}")
+                status_color = {
+                    "Đang gửi": "status-pending",
+                    "Đã nhận": "status-received",
+                    "Hư hỏng": "status-error"
+                }.get(shipment['status'], "")
+                st.markdown(
+                    f"**Trạng thái:** <span class='status-badge {status_color}'>{shipment['status']}</span>",
+                    unsafe_allow_html=True
+                )
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            new_status = st.selectbox("Trạng thái mới", ["Đang gửi", "Đã nhận", "Hư hỏng"])
+            
+            if st.button("🔄 CẬP NHẬT", use_container_width=True):
+                success, msg = update_shipment_status(qr_code, new_status)
+                if success:
+                    st.success(msg)
+                    st.session_state["qr_recv_value"] = ""
+                    st.rerun()
+                else:
+                    st.error(msg)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def page_tracking():
+    st.markdown("### Lộ Trình & Lịch Sử Trạng Thái")
+    shipments = get_all_shipments()
+
+    if shipments.empty:
+        st.info("Chưa có phiếu nào để theo dõi.")
+        return
+
+    qr_options = ["Chọn mã QR..."] + shipments["qr_code"].tolist()
+    selected_qr = st.selectbox("Chọn mã QR để xem lộ trình", qr_options)
+    if selected_qr == "Chọn mã QR...":
+        return
+
+    shipment_row = shipments[shipments["qr_code"] == selected_qr]
+    if shipment_row.empty:
+        st.warning("Không tìm thấy phiếu tương ứng.")
+        return
+
+    shipment = shipment_row.iloc[0]
+    current_status = shipment.get("status", "Đang gửi")
+
+    st.markdown(
+        f"**Trạng thái hiện tại:** <span class='status-badge status-pending'>{current_status}</span>",
+        unsafe_allow_html=True,
     )
+    render_shopee_status_card(current_status)
 
-    st.session_state['label_width_mm'] = width_val
-    st.session_state['label_height_mm'] = height_val
-    st.caption("Thiết lập này lưu trong phiên làm việc hiện tại. Khi in, bạn có thể chỉnh thêm trong hộp thoại in của trình duyệt.")
+    history_df = get_shipment_history(int(shipment["id"]))
+    history_statuses = [
+        row["new_value"]
+        for _, row in history_df.iterrows()
+        if isinstance(row.get("new_value"), str) and row["new_value"]
+    ]
+    render_status_timeline(history_statuses, current_status)
+
+    st.markdown("#### Cập nhật gần nhất")
+    if history_df.empty:
+        st.info("Chưa có lịch sử thay đổi.")
+    else:
+        display_history = history_df.rename(
+            columns={
+                "timestamp": "Thời gian",
+                "action": "Hành động",
+                "new_value": "Trạng thái mới",
+                "old_value": "Trạng thái cũ",
+                "user_action": "Người thực hiện",
+            }
+        )
+        st.dataframe(display_history, use_container_width=True)
 
 
-# Page configuration
-st.set_page_config(
-    page_title="Quản Lý Giao Nhận",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+def page_dashboard():
+    st.markdown("### Dashboard Phân Tích")
+    
+    # Filters trong card
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("#### Bộ lọc")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        keyword = st.text_input("🔍 Tìm kiếm", placeholder="QR/IMEI/Tên máy")
+    with col2:
+        filter_status = st.selectbox("📊 Trạng thái", ["Tất cả", "Đang gửi", "Đã nhận", "Hư hỏng"])
+    with col3:
+        supplier_options = ["Tất cả"] + get_suppliers()
+        filter_supplier = st.selectbox("🏢 Nhà cung cấp", supplier_options)
 
-# Apply styles
-inject_sidebar_styles()
-inject_main_styles()
+    col4, col5 = st.columns(2)
+    with col4:
+        date_from = st.date_input("📅 Từ ngày", value=None)
+    with col5:
+        date_to = st.date_input("📅 Đến ngày", value=None)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Ensure service account file exists (for Streamlit Cloud)
-ensure_service_account_file()
+    status = None if filter_status == "Tất cả" else filter_status
+    supplier = None if filter_supplier == "Tất cả" else filter_supplier
+    from_str = date_from.isoformat() if isinstance(date_from, date) else None
+    to_str = date_to.isoformat() if isinstance(date_to, date) else None
 
-# Initialize database on startup
-if 'db_initialized' not in st.session_state:
+    results = search_shipments(keyword, status, supplier, from_str, to_str)
+    if len(results) > 200:
+        st.info(f"📊 Có {len(results)} phiếu. Hiển thị 200 phiếu gần nhất.")
+        results = results.head(200)
+    
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("#### Danh sách phiếu")
+    st.dataframe(results, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+    
+    # Thống kê theo NCC
+    st.markdown("#### Thống Kê Theo Nhà Cung Cấp")
+    supplier_stats = get_supplier_statistics()
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.dataframe(supplier_stats, use_container_width=True)
+    with col2:
+        if not supplier_stats.empty:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.pie(
+                supplier_stats["total"],
+                labels=supplier_stats["supplier"],
+                autopct="%1.1f%%",
+                startangle=90,
+            )
+            ax.set_title("Phân bố theo NCC", fontsize=14, fontweight="bold")
+            st.pyplot(fig)
+        else:
+            st.info("Chưa có dữ liệu NCC.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Thống kê theo ngày
+    st.markdown("#### Thống Kê Theo Ngày")
+    daily_stats = get_daily_statistics()
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    if not daily_stats.empty:
+        st.line_chart(daily_stats.set_index("date")[["total", "received"]])
+    else:
+        st.info("Chưa có dữ liệu ngày.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Thời gian xử lý
+    st.markdown("#### Thời Gian Xử Lý Trung Bình (phút)")
+    processing = get_processing_time()
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.dataframe(processing, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+    
+    # Xuất báo cáo
+    st.markdown("### Xuất Báo Cáo")
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    colx, coly, colz = st.columns(3)
+    with colx:
+        pdf_buffer = generate_pdf_report(results, supplier=supplier, date_from=from_str, date_to=to_str)
+        st.download_button(
+            "📄 Tải PDF",
+            data=pdf_buffer,
+            file_name=f"report_{datetime.now().strftime('%d%m%Y_%H%M%S')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    with coly:
+        excel_buffer = generate_excel_report(results)
+        st.download_button(
+            "📊 Tải Excel",
+            data=excel_buffer,
+            file_name=f"report_{datetime.now().strftime('%d%m%Y_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with colz:
+        csv_data = results.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "📋 Tải CSV",
+            data=csv_data,
+            file_name=f"report_{datetime.now().strftime('%d%m%Y_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Lịch sử phiếu
+    st.divider()
+    st.markdown("### Lịch Sử Phiếu")
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    qr_for_history = st.selectbox(
+        "Chọn phiếu để xem timeline",
+        options=["Chọn..."] + results["qr_code"].tolist() if not results.empty else ["Chọn..."],
+    )
+    if qr_for_history != "Chọn...":
+        shipment = get_shipment_by_qr(qr_for_history)
+        if shipment is not None:
+            show_shipment_timeline(int(shipment["id"]))
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# -------------------- QR SCANNER --------------------
+def parse_qr_code(qr_text: str) -> dict:
+    """Parse QR code format: YCSC001234,124109200901,iPhone 15 Pro Max,128"""
+    parts = [p.strip() for p in qr_text.split(",") if p.strip()]
+    result = {"qr_code": "", "imei": "", "device_name": "", "capacity": ""}
+    if len(parts) >= 1:
+        result["qr_code"] = parts[0]
+    if len(parts) >= 2:
+        result["imei"] = parts[1]
+    if len(parts) >= 3:
+        result["device_name"] = parts[2]
+    if len(parts) >= 4:
+        result["capacity"] = parts[3]
+    return result
+
+
+def render_camera_modal(show: bool, key: str, title: str = "Quét QR Code") -> Optional[str]:
+    """Render camera in a prominent container."""
+    if not show:
+        return None
+    
+    # Kiểm tra dependencies trước
+    if any(dep is None for dep in [av, cv2, np, decode, webrtc_streamer, WebRtcMode]):
+        st.error("⚠️ Camera không khả dụng. Cần cài thêm các thư viện:")
+        st.code("pip install streamlit-webrtc opencv-python-headless pyzbar av", language="bash")
+        return None
+    
+    # Render title và container đẹp
+    st.markdown(f"## {title}")
+    st.info("📷 Đang khởi động camera... Vui lòng cho phép trình duyệt truy cập camera khi được hỏi.")
+    
+    # Container cho camera
+    with st.container():
+        st.markdown(
+            """
+            <div style="background: #000; border-radius: 16px; padding: 1rem; margin: 1rem 0; min-height: 400px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--primary);">
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        # Render camera trực tiếp
+        qr_code = qrcode_scanner(key, show=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Hướng dẫn
+    st.markdown(
+        """
+        <div style="margin-top: 1rem; text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 8px;">
+            📷 Đưa QR code vào khung hình camera ở trên để quét tự động
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    return qr_code
+
+
+def qrcode_scanner(key: str, show: bool = True) -> Optional[str]:
+    """Use camera to scan QR; returns decoded string or None."""
+    if not show:
+        return None
+    
+    if any(dep is None for dep in [av, cv2, np, decode, webrtc_streamer, WebRtcMode]):
+        return None
+
+    result_holder = {"code": None}
+
+    def video_frame_callback(frame):
+        try:
+            img = frame.to_ndarray(format="bgr24")
+            # Decode QR codes từ frame
+            decoded_objects = decode(img)
+            for qrobj in decoded_objects:
+                result_holder["code"] = qrobj.data.decode("utf-8")
+                # Vẽ khung xanh quanh QR code đã quét được
+                pts = np.array([[p.x, p.y] for p in qrobj.polygon], dtype=np.int32)
+                cv2.polylines(img, [pts], True, (0, 255, 0), 3)
+                # Vẽ text "QR Code Detected"
+                cv2.putText(img, "QR Code Detected!", (pts[0][0], pts[0][1] - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        except Exception as e:
+            pass
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    # Render camera - Streamlit webrtc sẽ tự render UI
+    try:
+        webrtc_streamer(
+            key=key,
+            mode=WebRtcMode.SENDONLY,
+            media_stream_constraints={"video": True, "audio": False},
+            video_frame_callback=video_frame_callback,
+            rtc_configuration={
+                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            },
+        )
+    except Exception as e:
+        st.error(f"Lỗi khởi động camera: {str(e)}")
+        return None
+    
+    # Trả về QR code nếu đã quét được
+    return result_holder["code"]
+
+
+# -------------------- MAIN --------------------
+def main():
     init_database()
-    st.session_state['db_initialized'] = True
+    
+    # Sidebar với styling đẹp
+    with st.sidebar:
+        st.markdown(
+            """
+            <div style="padding: 1rem 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
+                <h2 style="margin: 0; color: var(--text-primary);">Menu</h2>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        page = st.radio(
+            "Chọn chức năng:",
+            [
+                "🏠 Trang Chủ",
+                "📱 Quét QR Gửi",
+                "📥 Tiếp Nhận Hàng",
+                "🚚 Lộ Trình",
+                "📊 Dashboard",
+            ],
+            label_visibility="collapsed",
+        )
+        
+        st.markdown("---")
+        st.markdown(
+            """
+            <div style="padding: 1rem 0; font-size: 0.875rem; color: var(--text-secondary); text-align: center;">
+                Hệ Thống Quản Lý<br>Giao Nhận
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+    # Route to pages
+    if "Trang Chủ" in page or "🏠" in page:
+        page_home()
+    elif "Quét QR Gửi" in page or "📱" in page:
+        page_send()
+    elif "Tiếp Nhận Hàng" in page or "📥" in page:
+        page_receive()
+    elif "Lộ Trình" in page or "🚚" in page:
+        page_tracking()
+    elif "Dashboard" in page or "📊" in page:
+        page_dashboard()
 
-# Authentication check
-if not require_login():
-    st.stop()
 
-# Main layout
-st.sidebar.markdown('<div class="sidebar-title">Quản Lý Giao Nhận</div>', unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
 
-# User info and logout
-current_user = get_current_user()
-st.sidebar.markdown(f'<div class="sidebar-user">Người dùng: <strong>{current_user}</strong></div>', unsafe_allow_html=True)
-if st.sidebar.button("Đăng xuất", key="logout_btn"):
-    logout()
-    st.rerun()
-
-# Navigation - Dashboard is homepage, only show Settings for admin
-nav_options = ["Dashboard", "Quét QR", "Phiếu Chuyển", "Quản Lý Phiếu", "Lịch Sử"]
-if is_admin():
-    nav_options.append("Cài Đặt")
-
-# Box-style navigation buttons (no dropdown, no radio)
-# Dashboard is the default homepage
-if 'nav' not in st.session_state:
-    st.session_state['nav'] = "Dashboard"
-
-st.sidebar.markdown("**Chọn chức năng:**")
-for opt in nav_options:
-    is_current = st.session_state['nav'] == opt
-    btn = st.sidebar.button(
-        opt,
-        type="primary" if is_current else "secondary",
-        use_container_width=True,
-        key=f"nav_btn_{opt}"
-    )
-    if btn:
-        st.session_state['nav'] = opt
-        st.rerun()
-
-selected = st.session_state['nav']
-
-# Main content area - Dashboard is homepage
-if selected == "Dashboard":
-    show_dashboard()
-
-elif selected == "Quét QR":
-    scan_qr_screen()
-
-elif selected == "Phiếu Chuyển":
-    show_transfer_slip_screen()
-
-elif selected == "Quản Lý Phiếu":
-    show_manage_shipments()
-
-elif selected == "Lịch Sử":
-    show_audit_log()
-
-elif selected == "Cài Đặt":
-    show_settings_screen()
