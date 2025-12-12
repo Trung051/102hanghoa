@@ -76,7 +76,7 @@ from database import (
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
     set_user_password, get_all_users, get_shipment_by_id, create_store,
-    get_all_stores, assign_user_to_store,
+    get_all_stores, assign_user_to_store, delete_user, get_user,
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
     update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
@@ -1939,6 +1939,68 @@ def show_user_management():
         use_container_width=True,
         hide_index=True
     )
+
+    st.divider()
+    st.subheader("✏️ Chỉnh sửa / 🗑️ Xóa tài khoản")
+    if users_df.empty:
+        st.info("📭 Chưa có tài khoản nào để chỉnh sửa")
+        return
+
+    edit_col1, edit_col2 = st.columns([1, 1])
+    with edit_col1:
+        selected_user = st.selectbox("Chọn tài khoản", users_df['username'].tolist(), key="edit_user_select")
+    with edit_col2:
+        if selected_user == 'admin':
+            st.info("Không thể xoá tài khoản admin.")
+        delete_confirm = st.checkbox("Tôi muốn xoá tài khoản này", key="delete_user_confirm")
+        if st.button("🗑️ Xoá tài khoản", type="secondary", disabled=(selected_user == 'admin' or not delete_confirm)):
+            res = delete_user(selected_user)
+            if res['success']:
+                st.success(f"Đã xoá tài khoản {selected_user}")
+                st.rerun()
+            else:
+                st.error(f"❌ {res['error']}")
+
+    user_info = get_user(selected_user)
+    if not user_info:
+        st.error("Không lấy được thông tin tài khoản.")
+        return
+
+    with st.form("edit_user_form"):
+        st.write(f"Đang chỉnh sửa: **{selected_user}**")
+        new_password = st.text_input("Mật khẩu mới (bỏ trống nếu không đổi)", type="password")
+
+        stores_df = get_all_stores()
+        store_names = ["Không gán"] + stores_df['name'].tolist() if not stores_df.empty else ["Không gán"]
+        current_store = user_info.get('store_name') or "Không gán"
+        if current_store not in store_names:
+            store_names.append(current_store)
+        store_choice_edit = st.selectbox("Gán vào cửa hàng", store_names, index=store_names.index(current_store))
+
+        col_flags1, col_flags2 = st.columns(2)
+        with col_flags1:
+            is_admin_flag_edit = st.checkbox("Cấp quyền admin", value=bool(user_info.get('is_admin')))
+        with col_flags2:
+            is_store_flag_edit = st.checkbox("Cấp quyền cửa hàng", value=bool(user_info.get('is_store')) or store_choice_edit != "Không gán")
+            if store_choice_edit != "Không gán" and not is_store_flag_edit:
+                st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
+                is_store_flag_edit = True
+
+        if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
+            pwd_to_save = new_password if new_password else user_info.get('password')
+            assigned_store = None if store_choice_edit == "Không gán" else store_choice_edit
+            res = set_user_password(
+                selected_user,
+                pwd_to_save,
+                is_admin=is_admin_flag_edit,
+                is_store=is_store_flag_edit,
+                store_name=assigned_store
+            )
+            if res['success']:
+                st.success("✅ Đã cập nhật tài khoản")
+                st.rerun()
+            else:
+                st.error(f"❌ {res['error']}")
 
 
 def show_database_management():
