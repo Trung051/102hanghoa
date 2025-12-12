@@ -75,7 +75,8 @@ from database import (
     init_database, save_shipment, update_shipment_status, update_shipment,
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
-    set_user_password, get_all_users, get_shipment_by_id,
+    set_user_password, get_all_users, get_shipment_by_id, create_store,
+    get_all_stores, assign_user_to_store,
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
     update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
@@ -1843,16 +1844,54 @@ def show_user_management():
     """Allow admin to create/update user passwords"""
     st.subheader("🔑 Quản Lý Tài Khoản")
 
+    # --- Store management ---
+    with st.expander("🏪 Tạo / xem danh sách Cửa hàng", expanded=False):
+        store_tab1, store_tab2 = st.columns([1, 1])
+        with store_tab1:
+            with st.form("add_store_form"):
+                store_name = st.text_input("Tên cửa hàng *", help="Ví dụ: Kho Chính, Xô Viết, Quận 1")
+                store_address = st.text_input("Địa chỉ (tuỳ chọn)")
+                store_note = st.text_area("Ghi chú (tuỳ chọn)", height=80)
+                if st.form_submit_button("➕ Tạo cửa hàng", type="primary"):
+                    if not store_name.strip():
+                        st.error("❌ Vui lòng nhập tên cửa hàng")
+                    else:
+                        res = create_store(store_name.strip(), store_address.strip() if store_address else None, store_note.strip() if store_note else None)
+                        if res['success']:
+                            st.success(f"✅ Đã tạo cửa hàng: {store_name}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {res['error']}")
+        with store_tab2:
+            stores_df = get_all_stores()
+            if stores_df.empty:
+                st.info("Chưa có cửa hàng nào.")
+            else:
+                st.dataframe(
+                    stores_df[['name', 'address', 'note', 'created_at']],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=220
+                )
+
     with st.form("user_form"):
         username = st.text_input("Tên đăng nhập *", help="Ví dụ: admin, user, staff, cuahang1")
         password = st.text_input("Mật khẩu mới *", type="password")
         confirm = st.text_input("Nhập lại mật khẩu *", type="password")
         
+        stores_df = get_all_stores()
+        store_names = ["Không gán"] + stores_df['name'].tolist() if not stores_df.empty else ["Không gán"]
+        store_choice = st.selectbox("Gán vào cửa hàng", store_names)
+        
         col_check1, col_check2 = st.columns(2)
         with col_check1:
             is_admin_flag = st.checkbox("Cấp quyền admin", value=False)
         with col_check2:
-            is_store_flag = st.checkbox("Cấp quyền cửa hàng", value=False, help="Tài khoản này sẽ có quyền cửa hàng")
+            # Nếu chọn cửa hàng thì tự động coi là tài khoản cửa hàng
+            is_store_flag = st.checkbox("Cấp quyền cửa hàng", value=(store_choice != "Không gán"), help="Tài khoản này sẽ có quyền cửa hàng")
+            if store_choice != "Không gán" and not is_store_flag:
+                st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
+                is_store_flag = True
 
         submitted = st.form_submit_button("💾 Lưu tài khoản", type="primary")
         if submitted:
@@ -1863,9 +1902,10 @@ def show_user_management():
             elif password != confirm:
                 st.error("❌ Mật khẩu nhập lại không khớp")
             else:
-                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag)
+                assigned_store = None if store_choice == "Không gán" else store_choice
+                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, assigned_store)
                 if result['success']:
-                    store_msg = " (Cửa hàng)" if is_store_flag else ""
+                    store_msg = f" (Cửa hàng: {assigned_store})" if assigned_store else ""
                     admin_msg = " (Admin)" if is_admin_flag else ""
                     st.success(f"✅ Đã lưu tài khoản thành công{admin_msg}{store_msg}")
                 else:
@@ -1888,6 +1928,11 @@ def show_user_management():
         users_df['is_store'] = users_df['is_store'].apply(lambda x: "Cửa hàng" if x else "Không")
     else:
         users_df['is_store'] = "Không"
+
+    if 'store_name' in users_df.columns:
+        users_df.rename(columns={'store_name': 'Cửa hàng'}, inplace=True)
+    else:
+        users_df['Cửa hàng'] = ""
 
     st.dataframe(
         users_df,
