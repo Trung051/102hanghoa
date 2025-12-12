@@ -1257,26 +1257,47 @@ def clear_all_data():
 
 def auto_update_status_after_1hour():
     """
-    Tự động chuyển trạng thái "Chuyển kho" → "Đang xử lý" sau 1 giờ
-    Chỉ cập nhật các phiếu có trạng thái "Chuyển kho" và last_updated cách đây >= 1 giờ
+    Tự động chuyển trạng thái sau 1 giờ:
+    - "Đã nhận"      -> "Nhập kho xử lý"
+    - "Nhập kho"     -> "Nhập kho xử lý"
+    - "Chuyển kho"   -> "Đang xử lý" (giữ logic cũ)
     
     Returns:
         dict: {'success': bool, 'updated_count': int, 'error': str or None}
     """
-    from config import ACTIVE_STATUSES
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        # Tìm các phiếu có trạng thái "Chuyển kho" và last_updated >= 1 giờ trước
+        updated_count = 0
+        
+        # Đã nhận -> Nhập kho xử lý sau 1 giờ
+        cursor.execute('''
+        UPDATE ShipmentDetails
+        SET status = 'Nhập kho xử lý', last_updated = CURRENT_TIMESTAMP
+        WHERE status = 'Đã nhận'
+        AND datetime(last_updated) <= datetime('now', '-1 hour')
+        ''')
+        updated_count += cursor.rowcount
+        
+        # Nhập kho -> Nhập kho xử lý sau 1 giờ
+        cursor.execute('''
+        UPDATE ShipmentDetails
+        SET status = 'Nhập kho xử lý', last_updated = CURRENT_TIMESTAMP
+        WHERE status = 'Nhập kho'
+        AND datetime(last_updated) <= datetime('now', '-1 hour')
+        ''')
+        updated_count += cursor.rowcount
+        
+        # Chuyển kho -> Đang xử lý sau 1 giờ (logic cũ)
         cursor.execute('''
         UPDATE ShipmentDetails
         SET status = 'Đang xử lý', last_updated = CURRENT_TIMESTAMP
         WHERE status = 'Chuyển kho'
         AND datetime(last_updated) <= datetime('now', '-1 hour')
         ''')
+        updated_count += cursor.rowcount
         
-        updated_count = cursor.rowcount
         conn.commit()
         
         return {'success': True, 'updated_count': updated_count, 'error': None}
