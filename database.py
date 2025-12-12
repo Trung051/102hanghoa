@@ -422,7 +422,8 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None):
         # Update status
         update_fields = {
             'status': new_status,
-            'updated_by': updated_by
+            'updated_by': updated_by,
+            'last_updated': 'CURRENT_TIMESTAMP'  # Always update last_updated when status changes
         }
         
         # Set received_time if status is "Đã nhận"
@@ -433,8 +434,11 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None):
         if notes:
             update_fields['notes'] = notes
         
-        set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
-        values = list(update_fields.values()) + [qr_code]
+        # Handle last_updated separately (SQL function)
+        fields_without_timestamp = {k: v for k, v in update_fields.items() if k != 'last_updated'}
+        set_clause = ', '.join([f"{k} = ?" for k in fields_without_timestamp.keys()])
+        set_clause += ', last_updated = CURRENT_TIMESTAMP'
+        values = list(fields_without_timestamp.values()) + [qr_code]
         
         cursor.execute(f'''
         UPDATE ShipmentDetails
