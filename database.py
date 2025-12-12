@@ -100,7 +100,8 @@ def init_database():
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
             is_admin BOOLEAN DEFAULT 0,
-            is_store BOOLEAN DEFAULT 0
+            is_store BOOLEAN DEFAULT 0,
+            store_name TEXT
         )
         ''')
         
@@ -109,6 +110,8 @@ def init_database():
         cols = [row[1] for row in cursor.fetchall()]
         if "is_store" not in cols:
             cursor.execute("ALTER TABLE Users ADD COLUMN is_store BOOLEAN DEFAULT 0")
+        if "store_name" not in cols:
+            cursor.execute("ALTER TABLE Users ADD COLUMN store_name TEXT")
         
         # Create TransferSlips table (Phiếu chuyển)
         cursor.execute('''
@@ -143,9 +146,20 @@ def init_database():
             is_admin = 1 if username == 'admin' else 0
             is_store = 1 if username.startswith('cuahang') else 0
             cursor.execute('''
-            INSERT OR IGNORE INTO Users (username, password, is_admin, is_store)
-            VALUES (?, ?, ?, ?)
-            ''', (username, password, is_admin, is_store))
+            INSERT OR IGNORE INTO Users (username, password, is_admin, is_store, store_name)
+            VALUES (?, ?, ?, ?, ?)
+            ''', (username, password, is_admin, is_store, None))
+        
+        # Create Stores table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            address TEXT,
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
         
         # Seed default suppliers
         for supplier in DEFAULT_SUPPLIERS:
@@ -520,7 +534,7 @@ def get_user(username):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        SELECT username, password, is_admin, is_store
+        SELECT username, password, is_admin, is_store, store_name
         FROM Users
         WHERE username = ?
         ''', (username,))
@@ -530,7 +544,8 @@ def get_user(username):
                 'username': result[0],
                 'password': result[1],
                 'is_admin': bool(result[2]),
-                'is_store': bool(result[3]) if len(result) > 3 else False
+                'is_store': bool(result[3]) if len(result) > 3 else False,
+                'store_name': result[4] if len(result) > 4 else None
             }
         return None
     except Exception as e:
@@ -540,7 +555,7 @@ def get_user(username):
         conn.close()
 
 
-def set_user_password(username, password, is_admin=False, is_store=False):
+def set_user_password(username, password, is_admin=False, is_store=False, store_name=None):
     """
     Create or update user password.
     Uses UPSERT to avoid duplicates.
@@ -555,13 +570,14 @@ def set_user_password(username, password, is_admin=False, is_store=False):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        INSERT INTO Users (username, password, is_admin, is_store)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO Users (username, password, is_admin, is_store, store_name)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(username) DO UPDATE SET
             password = excluded.password,
             is_admin = excluded.is_admin,
-            is_store = excluded.is_store
-        ''', (username, password, 1 if is_admin else 0, 1 if is_store else 0))
+            is_store = excluded.is_store,
+            store_name = excluded.store_name
+        ''', (username, password, 1 if is_admin else 0, 1 if is_store else 0, store_name))
         conn.commit()
         return {'success': True, 'error': None}
     except Exception as e:
@@ -576,7 +592,7 @@ def get_all_users():
     conn = get_connection()
     try:
         df = pd.read_sql_query('''
-        SELECT username, password, is_admin, is_store
+        SELECT username, password, is_admin, is_store, store_name
         FROM Users
         ORDER BY username
         ''', conn)
@@ -584,6 +600,69 @@ def get_all_users():
     except Exception as e:
         print(f"Error getting users: {e}")
         return pd.DataFrame(columns=['username', 'password', 'is_admin', 'is_store'])
+    finally:
+        conn.close()
+
+
+def create_store(name: str, address: str = None, note: str = None):
+    """Create a new store."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO Stores (name, address, note)
+        VALUES (?, ?, ?)
+        ''', (name, address, note))
+        conn.commit()
+        return {'success': True, 'id': cursor.lastrowid, 'error': None}
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return {'success': False, 'id': None, 'error': 'Tên cửa hàng đã tồn tại'}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'id': None, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def get_all_stores():
+    """Get all stores."""
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query('''
+        SELECT id, name, address, note, created_at
+        FROM Stores
+        ORDER BY name
+        ''', conn)
+        return df
+    except Exception as e:
+        print(f"Error getting stores: {e}")
+        return pd.DataFrame(columns=['id', 'name', 'address', 'note', 'created_at'])
+    finally:
+        conn.close()
+
+
+def assign_user_to_store(username: str, store_name: str):
+    """
+    Assign user to a store (and mark as store user).
+    If store_name is empty/None, remove assignment and is_store flag.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        UPDATE Users
+        SET store_name = ?, is_store = CASE WHEN ? IS NOT NULL THEN 1 ELSE 0 END
+        WHERE username = ?
+        ''', (store_name, store_name, username))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return {'success': False, 'error': 'User không tồn tại'}
+        conn.commit()
+        return {'success': True, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
     finally:
         conn.close()
 
