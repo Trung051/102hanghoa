@@ -9,10 +9,10 @@ import sys
 from datetime import datetime
 import pandas as pd
 
-# Ensure local config.py is preferred over any site-packages/config.py
+# Ensure local modules are preferred
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import DB_PATH, DEFAULT_STATUS, DEFAULT_SUPPLIERS, USERS
+from settings import DB_PATH, DEFAULT_STATUS, DEFAULT_SUPPLIERS, USERS
 
 
 def get_connection():
@@ -655,6 +655,26 @@ def assign_user_to_store(username: str, store_name: str):
         SET store_name = ?, is_store = CASE WHEN ? IS NOT NULL THEN 1 ELSE 0 END
         WHERE username = ?
         ''', (store_name, store_name, username))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return {'success': False, 'error': 'User không tồn tại'}
+        conn.commit()
+        return {'success': True, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def delete_user(username: str):
+    """Delete a user by username (protect admin)."""
+    if username == 'admin':
+        return {'success': False, 'error': 'Không thể xóa tài khoản admin'}
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('DELETE FROM Users WHERE username = ?', (username,))
         if cursor.rowcount == 0:
             conn.rollback()
             return {'success': False, 'error': 'User không tồn tại'}
@@ -1394,7 +1414,7 @@ def get_active_shipments():
     Returns:
         pandas.DataFrame: DataFrame chứa các phiếu đang hoạt động
     """
-    from config import ACTIVE_STATUSES
+    from settings import ACTIVE_STATUSES
     conn = get_connection()
     
     try:
