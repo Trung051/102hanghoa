@@ -1518,46 +1518,46 @@ def show_manage_shipments():
         with st.expander(f"{row['qr_code']} - {row['device_name']} ({row['status']})", expanded=False):
             col1, col2 = st.columns([2, 1])
             
-            with col1:
-                st.write("**Thông tin phiếu:**")
-                info_col1, info_col2 = st.columns(2)
-                
-                with info_col1:
-                    st.write(f"**Mã QR:** {row['qr_code']}")
-                    st.write(f"**IMEI:** {row['imei']}")
-                    st.write(f"**Tên thiết bị:** {row['device_name']}")
-                    st.write(f"**Lỗi / Tình trạng:** {row['capacity']}")
-                
-                with info_col2:
-                    st.write(f"**NCC:** {row['supplier']}")
-                    st.write(f"**Trạng thái:** {row['status']}")
-                    if pd.notna(row.get('store_name')) and row.get('store_name'):
-                        st.write(f"**Cửa hàng:** {row['store_name']}")
-                    st.write(f"**Thời gian gửi:** {row['sent_time']}")
-                    if pd.notna(row['received_time']):
-                        st.write(f"**Thời gian nhận:** {row['received_time']}")
-                    if pd.notna(row.get('last_updated')) and row.get('last_updated'):
-                        st.write(f"**Cập nhật lúc:** {row['last_updated']}")
-                    st.write(f"**Người tạo:** {row['created_by']}")
-                    if pd.notna(row['updated_by']):
-                        st.write(f"**Người cập nhật:** {row['updated_by']}")
-                
-                if pd.notna(row['notes']) and row['notes']:
-                    st.write(f"**Ghi chú:** {row['notes']}")
-
-                # Print label button
-                print_btn_key = f"print_label_{row['id']}"
-                if st.button("🖨️ In tem QR", key=print_btn_key):
-                    st.session_state['label_preview_id'] = row['id']
-                if st.session_state.get('label_preview_id') == row['id']:
-                    st.info("Xem trước tem. Bấm 'In tem' trong khung để in (chọn máy in/bkhổ giấy trong hộp thoại).")
-                    render_label_component(row)
+        with col1:
+            st.write("**Thông tin phiếu:**")
+            info_col1, info_col2 = st.columns(2)
             
-            with col2:
-                # Image upload status
-                if not row.get('image_url'):
-                    st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
-                else:
+            with info_col1:
+                st.write(f"**Mã QR:** {row['qr_code']}")
+                st.write(f"**IMEI:** {row['imei']}")
+                st.write(f"**Tên thiết bị:** {row['device_name']}")
+                st.write(f"**Lỗi / Tình trạng:** {row['capacity']}")
+            
+            with info_col2:
+                st.write(f"**NCC:** {row['supplier']}")
+                st.write(f"**Trạng thái:** {row['status']}")
+                if pd.notna(row.get('store_name')) and row.get('store_name'):
+                    st.write(f"**Cửa hàng:** {row['store_name']}")
+                st.write(f"**Thời gian gửi:** {row['sent_time']}")
+                if pd.notna(row['received_time']):
+                    st.write(f"**Thời gian nhận:** {row['received_time']}")
+                if pd.notna(row.get('last_updated')) and row.get('last_updated'):
+                    st.write(f"**Cập nhật lúc:** {row['last_updated']}")
+                st.write(f"**Người tạo:** {row['created_by']}")
+                if pd.notna(row['updated_by']):
+                    st.write(f"**Người cập nhật:** {row['updated_by']}")
+            
+            if pd.notna(row['notes']) and row['notes']:
+                st.write(f"**Ghi chú:** {row['notes']}")
+
+            # Print label button
+            print_btn_key = f"print_label_{row['id']}"
+            if st.button("🖨️ In tem QR", key=print_btn_key):
+                st.session_state['label_preview_id'] = row['id']
+            if st.session_state.get('label_preview_id') == row['id']:
+                st.info("Xem trước tem. Bấm 'In tem' trong khung để in (chọn máy in/bkhổ giấy trong hộp thoại).")
+                render_label_component(row)
+            
+        with col2:
+            # Image upload status
+            if not row.get('image_url'):
+                st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
+            else:
                     # Hỗ trợ nhiều ảnh (phân tách bằng ';')
                     urls = str(row.get('image_url') or '').split(';')
                     urls = [u for u in urls if u.strip()]
@@ -1565,16 +1565,15 @@ def show_manage_shipments():
                         for i, u in enumerate(urls):
                             display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
 
-                edit_key = f'edit_shipment_{row["id"]}'
-                is_editing = st.session_state.get(edit_key, False)
-                
-                if st.button("✏️ Chỉnh sửa" if not is_editing else "❌ Hủy", key=f"btn_edit_{row['id']}"):
-                    st.session_state[edit_key] = not is_editing
-                    st.rerun()
-            
-            # Edit form
             edit_key = f'edit_shipment_{row["id"]}'
-            if st.session_state.get(edit_key, False):
+            is_editing = st.session_state.get(edit_key, False)
+            
+            if st.button("✏️ Chỉnh sửa" if not is_editing else "❌ Hủy", key=f"btn_edit_{row['id']}"):
+                st.session_state[edit_key] = not is_editing
+                st.rerun()
+        
+        # Edit form
+        if st.session_state.get(edit_key, False):
                 st.divider()
                 st.write("### ✏️ Chỉnh Sửa Phiếu")
                 
@@ -1699,8 +1698,8 @@ def show_manage_shipments():
                             if edit_key in st.session_state:
                                 del st.session_state[edit_key]
                             st.rerun()
-            
-            st.divider()
+        
+        st.divider()
 
 
 def show_settings_screen():
@@ -1745,74 +1744,73 @@ def show_suppliers_list():
     
     # Display suppliers
     for idx, row in df.iterrows():
-        with st.container():
-            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
-            
-            with col1:
-                status_icon = "✅" if row['is_active'] else "❌"
-                st.write(f"**{status_icon} {row['name']}**")
-            
-            with col2:
-                st.write(f"📞 {row['contact'] or 'N/A'}")
-            
-            with col3:
-                st.write(f"📍 {row['address'] or 'N/A'}")
-            
-            with col4:
-                if st.button("✏️ Sửa", key=f"edit_{row['id']}"):
-                    st.session_state[f'edit_supplier_{row["id"]}'] = True
+        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
+        
+        with col1:
+            status_icon = "✅" if row['is_active'] else "❌"
+            st.write(f"**{status_icon} {row['name']}**")
+        
+        with col2:
+            st.write(f"📞 {row['contact'] or 'N/A'}")
+        
+        with col3:
+            st.write(f"📍 {row['address'] or 'N/A'}")
+        
+        with col4:
+            if st.button("✏️ Sửa", key=f"edit_{row['id']}"):
+                st.session_state[f'edit_supplier_{row["id"]}'] = True
                 st.rerun()
         
-            with col5:
-                if row['is_active']:
-                    if st.button("🗑️ Xóa", key=f"delete_{row['id']}"):
-                        result = delete_supplier(row['id'])
-                        if result['success']:
-                            st.success(f"✅ Đã xóa nhà cung cấp: {row['name']}")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['error']}")
-                else:
-                    if st.button("♻️ Khôi phục", key=f"restore_{row['id']}"):
-                        result = update_supplier(row['id'], is_active=True)
-                        if result['success']:
-                            st.success(f"✅ Đã khôi phục nhà cung cấp: {row['name']}")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['error']}")
-            
-            # Edit form (if edit button clicked)
-            if st.session_state.get(f'edit_supplier_{row["id"]}', False):
-                with st.expander(f"✏️ Sửa thông tin: {row['name']}", expanded=True):
-                    with st.form(f"edit_form_{row['id']}"):
-                        new_name = st.text_input("Tên nhà cung cấp:", value=row['name'], key=f"edit_name_{row['id']}")
-                        new_contact = st.text_input("Liên hệ:", value=row['contact'] or '', key=f"edit_contact_{row['id']}")
-                        new_address = st.text_input("Địa chỉ:", value=row['address'] or '', key=f"edit_address_{row['id']}")
-                        new_active = st.checkbox("Đang hoạt động", value=bool(row['is_active']), key=f"edit_active_{row['id']}")
-                        
-                        col_submit1, col_submit2 = st.columns(2)
-                        with col_submit1:
-                            if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-                                result = update_supplier(
-                                    row['id'],
-                                    name=new_name.strip() if new_name.strip() else None,
-                                    contact=new_contact.strip() if new_contact.strip() else None,
-                                    address=new_address.strip() if new_address.strip() else None,
-                                    is_active=new_active
-                                )
-                                if result['success']:
-                                    st.success("✅ Đã cập nhật thành công!")
-                                    st.session_state[f'edit_supplier_{row["id"]}'] = False
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ {result['error']}")
-                        
-                        with col_submit2:
-                            if st.form_submit_button("❌ Hủy"):
-                                st.session_state[f'edit_supplier_{row["id"]}'] = False
-            st.rerun()
+        with col5:
+            if row['is_active']:
+                if st.button("🗑️ Xóa", key=f"delete_{row['id']}"):
+                    result = delete_supplier(row['id'])
+                    if result['success']:
+                        st.success(f"✅ Đã xóa nhà cung cấp: {row['name']}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {result['error']}")
+            else:
+                if st.button("♻️ Khôi phục", key=f"restore_{row['id']}"):
+                    result = update_supplier(row['id'], is_active=True)
+                    if result['success']:
+                        st.success(f"✅ Đã khôi phục nhà cung cấp: {row['name']}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {result['error']}")
         
-            st.divider()
+        # Edit form (if edit button clicked)
+        if st.session_state.get(f'edit_supplier_{row["id"]}', False):
+            with st.expander(f"✏️ Sửa thông tin: {row['name']}", expanded=True):
+                with st.form(f"edit_form_{row['id']}"):
+                    new_name = st.text_input("Tên nhà cung cấp:", value=row['name'], key=f"edit_name_{row['id']}")
+                    new_contact = st.text_input("Liên hệ:", value=row['contact'] or '', key=f"edit_contact_{row['id']}")
+                    new_address = st.text_input("Địa chỉ:", value=row['address'] or '', key=f"edit_address_{row['id']}")
+                    new_active = st.checkbox("Đang hoạt động", value=bool(row['is_active']), key=f"edit_active_{row['id']}")
+                    
+                    col_submit1, col_submit2 = st.columns(2)
+                    with col_submit1:
+                        if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
+                            result = update_supplier(
+                                row['id'],
+                                name=new_name.strip() if new_name.strip() else None,
+                                contact=new_contact.strip() if new_contact.strip() else None,
+                                address=new_address.strip() if new_address.strip() else None,
+                                is_active=new_active
+                            )
+                            if result['success']:
+                                st.success("✅ Đã cập nhật thành công!")
+                                st.session_state[f'edit_supplier_{row["id"]}'] = False
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {result['error']}")
+                    
+                    with col_submit2:
+                        if st.form_submit_button("❌ Hủy"):
+                            st.session_state[f'edit_supplier_{row["id"]}'] = False
+                            st.rerun()
+        
+        st.divider()
 
 
 def show_add_supplier_form():
@@ -1903,7 +1901,7 @@ def show_user_management():
                 st.error("❌ Vui lòng nhập mật khẩu")
             elif password != confirm:
                 st.error("❌ Mật khẩu nhập lại không khớp")
-        else:
+            else:
                 assigned_store = None if store_choice == "Không gán" else store_choice
                 result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, assigned_store)
                 if result['success']:
