@@ -52,19 +52,36 @@ def notify_shipment_if_received(shipment_id, force=False, is_update_image=False)
         image_urls = [url.strip() for url in image_url.split(';') if url.strip()]
         print(f"📸 Sending {len(image_urls)} images to Telegram")
         if image_urls:
-            # Send first image with caption, then send other images without caption
-            print(f"📤 Sending first image: {image_urls[0]}")
+            success_count = 0
+            failed_count = 0
+            
+            # Send first image with caption
+            print(f"📤 Sending first image (1/{len(image_urls)}): {image_urls[0]}")
             res = send_photo(image_urls[0], message_text)
             print(f"📤 First image result: {res}")
+            
             if res.get('success'):
-                # Send remaining images if any
+                success_count += 1
+                # Send remaining images without caption
                 for idx, img_url in enumerate(image_urls[1:], 2):
-                    print(f"📤 Sending image {idx}: {img_url}")
+                    print(f"📤 Sending image {idx}/{len(image_urls)}: {img_url}")
                     send_res = send_photo(img_url, "")
                     print(f"📤 Image {idx} result: {send_res}")
-            if not res.get('success'):
-                # Fallback: send text with link to images
-                print(f"⚠️ Photo send failed, falling back to text")
+                    if send_res.get('success'):
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                        print(f"❌ Failed to send image {idx}: {send_res.get('error', 'Unknown error')}")
+                
+                # Summary
+                if success_count == len(image_urls):
+                    print(f"✅ Successfully sent all {success_count} images to Telegram")
+                else:
+                    print(f"⚠️ Sent {success_count}/{len(image_urls)} images. {failed_count} failed.")
+            else:
+                # First image failed, fallback to text with links
+                print(f"⚠️ First photo send failed, falling back to text")
+                failed_count = 1
                 images_text = "\n".join([f"Ảnh {i+1}: {url}" for i, url in enumerate(image_urls)])
                 message_text = f"{message_text}\n\n{images_text}"
                 res = send_text(message_text)
