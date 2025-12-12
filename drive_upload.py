@@ -11,7 +11,10 @@ from googleapiclient.http import MediaIoBaseUpload
 SERVICE_ACCOUNT_FILE = "service_account.json"
 # Upload to specific folder (Shared Drive folder you shared with the service account)
 try:
-    from settings import DRIVE_FOLDER_ID, DRIVE_TRANSFER_FOLDER_ID
+    try:
+        from settings import DRIVE_FOLDER_ID, DRIVE_TRANSFER_FOLDER_ID  # type: ignore
+    except ModuleNotFoundError:
+        from config import DRIVE_FOLDER_ID, DRIVE_TRANSFER_FOLDER_ID  # type: ignore
 except Exception:
     DRIVE_FOLDER_ID = None
     DRIVE_TRANSFER_FOLDER_ID = None
