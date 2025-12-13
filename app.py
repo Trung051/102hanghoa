@@ -1189,8 +1189,8 @@ def show_update_shipment_form(current_user, found_shipment):
 
 
 def show_dashboard():
-    """Show dashboard with request type tabs and filters"""
-    # Professional CSS for dashboard with animations
+    """Show professional dashboard with request type tabs, filters, and status battery indicators"""
+    # Professional CSS for dashboard with animations and battery status
     st.markdown("""
     <style>
     /* Main container */
@@ -1462,6 +1462,66 @@ def show_dashboard():
             transform: translateX(0);
         }
     }
+    
+    /* Battery Status Indicator */
+    .status-battery {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 0.5rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .battery-container {
+        position: relative;
+        width: 40px;
+        height: 20px;
+        border: 2px solid #374151;
+        border-radius: 3px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+    
+    .battery-tip {
+        position: absolute;
+        right: -4px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 10px;
+        background: #374151;
+        border-radius: 0 2px 2px 0;
+    }
+    
+    .battery-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 0%;
+        transition: width 0.5s ease-in-out;
+        border-radius: 1px;
+    }
+    
+    /* Status colors and fill percentages */
+    .status-0 .battery-fill { width: 11%; background: #ef4444; } /* Đã nhận */
+    .status-1 .battery-fill { width: 22%; background: #f59e0b; } /* Chuyển kho */
+    .status-2 .battery-fill { width: 33%; background: #fbbf24; } /* Đang kiểm tra */
+    .status-3 .battery-fill { width: 44%; background: #fcd34d; } /* Gửi NCC sửa */
+    .status-4 .battery-fill { width: 55%; background: #84cc16; } /* Đang sửa chữa */
+    .status-5 .battery-fill { width: 66%; background: #65a30d; } /* Hoàn thành sửa chữa */
+    .status-6 .battery-fill { width: 77%; background: #22c55e; } /* Chuyển cửa hàng */
+    .status-7 .battery-fill { width: 88%; background: #16a34a; } /* Chờ trả khách */
+    .status-8 .battery-fill { width: 100%; background: #10b981; } /* Hoàn thành */
+    
+    .status-text {
+        color: #1f2937;
+        font-weight: 500;
+    }
     </style>
     """, unsafe_allow_html=True)
     st.title("QUẢN LÝ SỬA CHỮA")
@@ -1523,9 +1583,9 @@ def show_dashboard():
                 index=status_index
             )
             
-            # Time filter (compact)
-            time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
-            current_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+            # Time filter (compact) - Add "Toàn bộ" option
+            time_options = ["Toàn bộ", "Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+            current_time = st.session_state.get('filter_time_dash', 'Toàn bộ')
             time_index = 0
             if current_time in time_options:
                 time_index = time_options.index(current_time)
@@ -1620,8 +1680,9 @@ def show_dashboard():
     
     # Get filter values from session state (in case filter box is hidden)
     # Always get filter values from session state to ensure consistency
+    # Default to show all data (not filtered)
     selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-    selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+    selected_time = st.session_state.get('filter_time_dash', 'Toàn bộ')  # Changed default to show all
     display_limit = st.session_state.get('display_limit_dash', 100)
     date_range = st.session_state.get('dash_date_range_custom', None)
     
@@ -1641,7 +1702,7 @@ def show_dashboard():
         filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
     
     # Apply time filter
-    if selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
+    if selected_time != "Toàn bộ" and selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
         try:
             df_copy = filtered_by_type.copy()
             df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
@@ -1740,13 +1801,16 @@ def show_dashboard():
                         except:
                             pass
                     
+                    # Get status for display
+                    status = row.get('status', '')
+                    
                     display_data.append({
                         'Mã Yêu Cầu': row.get('qr_code', ''),
                         'Tên Hàng': row.get('device_name', ''),
                         'Imei': row.get('imei', ''),
                         'Ngày Nhận': sent_date,
                         'Ngày Trả': completed_date,
-                        'Trạng Thái': row.get('status', ''),
+                        'Trạng Thái': status,  # Keep as text, will add battery indicator separately
                         'Chi Tiết': '>>>',
                         'ID': row.get('id', '')  # Store ID for detail popup
                     })
@@ -1773,48 +1837,68 @@ def show_dashboard():
                     display_df_with_checkbox = display_df.copy()
                     display_df_with_checkbox.insert(0, 'Chọn', checkbox_values)
                     
-                    # Display editable dataframe with checkboxes
-                    edited_df = st.data_editor(
-                        display_df_with_checkbox[['Chọn', 'Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái', 'Chi Tiết']],
-                        use_container_width=True,
-                        hide_index=True,
-                        height=600,
-                        column_config={
-                            "Chọn": st.column_config.CheckboxColumn("Chọn"),
-                            "Chi Tiết": st.column_config.TextColumn("Chi Tiết", disabled=True)
-                        },
-                        disabled=["Mã Yêu Cầu", "Tên Hàng", "Imei", "Ngày Nhận", "Ngày Trả", "Trạng Thái", "Chi Tiết"],
-                        key=f"data_editor_{active_tab_idx}",
-                        num_rows="fixed"
-                    )
+                    # Create a custom display with battery indicators
+                    # Since st.data_editor doesn't support HTML in cells, we'll create a custom table
+                    st.markdown("### Danh sách phiếu")
                     
-                    # Save checkbox state to session_state
-                    # Map edited_df back to display_df using position (they should be in same order)
-                    if not edited_df.empty and not display_df.empty and len(edited_df) == len(display_df):
-                        for idx in range(len(edited_df)):
-                            if idx < len(display_df):
-                                row_id = display_df.iloc[idx]['ID']
-                                checkbox_value = edited_df.iloc[idx]['Chọn']
-                                st.session_state[checkbox_state_key][row_id] = checkbox_value
+                    # Display table with battery status indicators
+                    for idx, row in display_df.iterrows():
+                        row_id = row['ID']
+                        status = row['Trạng Thái']
+                        status_index = STATUS_VALUES.index(status) if status in STATUS_VALUES else 0
+                        
+                        # Get checkbox state
+                        checkbox_checked = st.session_state[checkbox_state_key].get(row_id, False)
+                        
+                        # Create row with battery indicator
+                        col_check, col_qr, col_name, col_imei, col_received, col_return, col_status, col_detail = st.columns([0.5, 1.5, 2.5, 1.5, 1, 1, 2, 0.8])
+                        
+                        with col_check:
+                            new_checkbox = st.checkbox("", value=checkbox_checked, key=f"cb_{active_tab_idx}_{row_id}")
+                            if new_checkbox != checkbox_checked:
+                                st.session_state[checkbox_state_key][row_id] = new_checkbox
+                                st.rerun()
+                        
+                        with col_qr:
+                            st.write(row['Mã Yêu Cầu'])
+                        
+                        with col_name:
+                            st.write(row['Tên Hàng'])
+                        
+                        with col_imei:
+                            st.write(row['Imei'])
+                        
+                        with col_received:
+                            st.write(row['Ngày Nhận'])
+                        
+                        with col_return:
+                            st.write(row['Ngày Trả'] if row['Ngày Trả'] else '-')
+                        
+                        with col_status:
+                            st.markdown(f'''
+                            <div class="status-battery status-{status_index}">
+                                <div class="battery-container">
+                                    <div class="battery-fill"></div>
+                                    <div class="battery-tip"></div>
+                                </div>
+                                <span class="status-text">{status}</span>
+                            </div>
+                            ''', unsafe_allow_html=True)
+                        
+                        with col_detail:
+                            if st.button(">>>", key=f"detail_{active_tab_idx}_{row_id}"):
+                                st.session_state['detail_shipment_id'] = row_id
+                        
+                        st.divider()
                     
-                    # Get selected IDs from edited dataframe
-                    selected_ids = []
-                    if not edited_df.empty and not display_df.empty and len(edited_df) == len(display_df):
-                        for idx in range(len(edited_df)):
-                            if idx < len(display_df):
-                                if edited_df.iloc[idx]['Chọn']:
-                                    selected_ids.append(display_df.iloc[idx]['ID'])
+                    # Get selected IDs
+                    selected_ids = [row_id for row_id, checked in st.session_state[checkbox_state_key].items() if checked]
                     
-                    # Handle detail popup - use selectbox for simplicity
-                    detail_shipment_id = st.selectbox(
-                        "Chọn phiếu để xem chi tiết:",
-                        [""] + display_df['ID'].tolist(),
-                        format_func=lambda x: f"{display_df[display_df['ID'] == x]['Mã Yêu Cầu'].iloc[0] if x and x in display_df['ID'].values else ''}" if x else "Chọn phiếu...",
-                        key="detail_select_dash"
-                    )
+                    # Handle detail popup
+                    if st.session_state.get('detail_shipment_id'):
+                        show_shipment_detail_popup(st.session_state['detail_shipment_id'])
+                        st.session_state['detail_shipment_id'] = None
                     
-                    if detail_shipment_id:
-                        show_shipment_detail_popup(detail_shipment_id)
                 
                 # Handle print labels button
                 if st.session_state.get('print_labels_dash_clicked', False):
@@ -2216,7 +2300,7 @@ def show_manage_shipments():
             # Loại yêu cầu - hiển thị to rõ ở góc bên phải
             request_type = row.get('request_type', 'Chưa xác định')
             st.markdown(f"""
-            <div style="
+                <div style="
                 margin-bottom: 1rem;
             ">
                 <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">Loại yêu cầu</div>
