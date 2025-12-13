@@ -1237,72 +1237,99 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Layout: Filters on left, Table on right
-    col_filter, col_table = st.columns([1, 3])
+    # Initialize filter visibility state
+    if 'filter_visible' not in st.session_state:
+        st.session_state['filter_visible'] = True
     
-    with col_filter:
-        st.subheader("Bộ lọc")
-        
-        # Status filter
-        status_options = ["Toàn bộ"] + STATUS_VALUES
-        selected_status = st.selectbox(
-            "Trạng thái:",
-            status_options,
-            key="filter_status_dash"
-        )
-        
-        # Time filter
-        time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
-        selected_time = st.selectbox(
-            "Thời gian:",
-            time_options,
-            key="filter_time_dash"
-        )
-        
-        # Date range picker if "Thời gian tự chọn" is selected
-        date_range = None
-        if selected_time == "Thời gian tự chọn":
-            if 'sent_time' in filtered_by_type.columns:
-                try:
-                    df_copy = filtered_by_type.copy()
-                    df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                    min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                    max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                    
-                    date_range = st.date_input(
-                        "Khoảng thời gian:",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                        key="dash_date_range_custom"
-                    )
-                except:
-                    pass
-        
-        # Display setting
-        display_limit = st.selectbox(
-            "Hiển thị:",
-            [50, 100, 200, 500, 1000],
-            index=1,
-            key="display_limit_dash"
-        )
-        
-        # Action buttons
-        st.divider()
-        if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
-            st.session_state['print_labels_dash_clicked'] = True
-            st.rerun()
-        
-        if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
-            # Export functionality
-            csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Tải CSV",
-                data=csv,
-                file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
+    # Layout: Filters on left, Table on right
+    if st.session_state['filter_visible']:
+        col_filter, col_table = st.columns([1, 3])
+    else:
+        col_table = st.columns(1)[0]
+        col_filter = None
+    
+    # Filter toggle button - place it in the filter column if visible, or standalone if hidden
+    if st.session_state['filter_visible']:
+        if col_filter:
+            with col_filter:
+                if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
+                    st.session_state['filter_visible'] = False
+                    st.rerun()
+    
+    if col_filter:
+        with col_filter:
+            st.subheader("Bộ lọc")
+            
+            # Status filter
+            status_options = ["Toàn bộ"] + STATUS_VALUES
+            selected_status = st.selectbox(
+                "Trạng thái:",
+                status_options,
+                key="filter_status_dash"
             )
+            
+            # Time filter
+            time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+            selected_time = st.selectbox(
+                "Thời gian:",
+                time_options,
+                key="filter_time_dash"
+            )
+            
+            # Date range picker if "Thời gian tự chọn" is selected
+            date_range = None
+            if selected_time == "Thời gian tự chọn":
+                if 'sent_time' in filtered_by_type.columns:
+                    try:
+                        df_copy = filtered_by_type.copy()
+                        df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                        min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        
+                        date_range = st.date_input(
+                            "Khoảng thời gian:",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                            key="dash_date_range_custom"
+                        )
+                    except:
+                        pass
+            
+            # Display setting
+            display_limit = st.selectbox(
+                "Hiển thị:",
+                [50, 100, 200, 500, 1000],
+                index=1,
+                key="display_limit_dash"
+            )
+            
+            # Action buttons
+            st.divider()
+            if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+                st.session_state['print_labels_dash_clicked'] = True
+                st.rerun()
+            
+            if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
+                # Export functionality
+                csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 Tải CSV",
+                    data=csv,
+                    file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+    else:
+        # Default values when filter is hidden
+        selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
+        selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+        display_limit = st.session_state.get('display_limit_dash', 100)
+        date_range = None
+        # Show button to expand filter
+        if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc"):
+            st.session_state['filter_visible'] = True
+            st.rerun()
     
     # Apply status filter
     if selected_status != "Toàn bộ":
@@ -1383,8 +1410,19 @@ def show_dashboard():
                 
                 display_df = pd.DataFrame(display_data)
                 
+                # Initialize checkbox state
+                checkbox_state_key = f"checkbox_state_{active_tab_idx}"
+                if checkbox_state_key not in st.session_state:
+                    st.session_state[checkbox_state_key] = {}
+                
                 # Use st.data_editor for interactive checkboxes
-                display_df.insert(0, 'Chọn', False)
+                # Initialize checkbox column with saved state
+                checkbox_values = []
+                for idx in range(len(display_df)):
+                    row_id = display_df.iloc[idx]['ID']
+                    checkbox_values.append(st.session_state[checkbox_state_key].get(row_id, False))
+                
+                display_df.insert(0, 'Chọn', checkbox_values)
                 
                 # Display editable dataframe with checkboxes
                 edited_df = st.data_editor(
@@ -1399,6 +1437,13 @@ def show_dashboard():
                     disabled=["Mã Yêu Cầu", "Tên Hàng", "Imei", "Ngày Nhận", "Ngày Trả", "Trạng Thái", "Chi Tiết"],
                     key=f"data_editor_{active_tab_idx}"
                 )
+                
+                # Save checkbox state to session_state
+                if not edited_df.empty:
+                    for idx in range(len(edited_df)):
+                        if idx < len(display_df):
+                            row_id = display_df.iloc[idx]['ID']
+                            st.session_state[checkbox_state_key][row_id] = edited_df.iloc[idx]['Chọn']
                 
                 # Get selected IDs from edited dataframe
                 selected_ids = []
