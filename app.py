@@ -1283,15 +1283,34 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Filter popup using sidebar (opens when button is clicked)
+    # Filter popup modal - show as a prominent container at top
     if st.session_state.get('filter_popup_open', False):
-        with st.sidebar:
-            st.subheader("Bộ lọc")
+        # Create a prominent filter container with border and shadow
+        with st.container():
+            # Add styling for the modal container
+            st.markdown("""
+            <style>
+            .filter-popup-container {
+                border: 2px solid #e0e0e0;
+                border-radius: 0.5rem;
+                padding: 1.5rem;
+                background: white;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+                margin-bottom: 1rem;
+            }
+            </style>
+            """, unsafe_allow_html=True)
             
-            # Close button at top
-            if st.button("✕ Đóng", key="close_filter_sidebar", use_container_width=True, type="secondary"):
-                st.session_state['filter_popup_open'] = False
-                st.rerun()
+            # Modal content in a styled container
+            st.markdown('<div class="filter-popup-container">', unsafe_allow_html=True)
+            # Header with close button
+            col_title, col_close = st.columns([0.85, 0.15])
+            with col_title:
+                st.subheader("Bộ lọc")
+            with col_close:
+                if st.button("✕", key="close_filter_modal", help="Đóng"):
+                    st.session_state['filter_popup_open'] = False
+                    st.rerun()
             
             st.divider()
             
@@ -1366,6 +1385,14 @@ def show_dashboard():
                     use_container_width=True,
                     key="download_csv_popup"
                 )
+            
+            # Close button at bottom
+            st.divider()
+            if st.button("Đóng", use_container_width=True, key="close_filter_modal_bottom", type="secondary"):
+                st.session_state['filter_popup_open'] = False
+                st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
     
     # Get filter values from session state (with defaults)
     selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
