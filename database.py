@@ -737,7 +737,8 @@ def get_all_shipments():
     try:
         df = pd.read_sql_query('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, sent_time, received_time, created_by, updated_by, notes, image_url, telegram_message_id
+               status, request_type, store_name, sent_time, received_time, completed_time, 
+               created_by, updated_by, notes, image_url, telegram_message_id, last_updated
         FROM ShipmentDetails
         ORDER BY sent_time DESC
         ''', conn)
@@ -785,7 +786,8 @@ def get_shipments_by_status(status):
     try:
         df = pd.read_sql_query('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, sent_time, received_time, created_by, updated_by, notes, image_url, telegram_message_id
+               status, request_type, store_name, sent_time, received_time, completed_time,
+               created_by, updated_by, notes, image_url, telegram_message_id, last_updated
         FROM ShipmentDetails
         WHERE status = ?
         ORDER BY sent_time DESC
