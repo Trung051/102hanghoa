@@ -1779,7 +1779,7 @@ def show_manage_shipments():
 
 
 def show_dashboard():
-    """Dashboard hiển thị phiếu theo loại yêu cầu với bộ lọc và phân trang"""
+    """Dashboard hiển thị phiếu theo loại yêu cầu với bộ lọc và phân trang - Thiết kế mới"""
     st.header("📊 Dashboard Quản Lý Sửa Chữa")
     
     # Khởi tạo session state cho dashboard
@@ -1948,308 +1948,252 @@ def show_dashboard():
                         st.session_state[page_key] += 1
                         st.rerun()
             
-            # Hiển thị bảng dữ liệu
+            # Hiển thị bảng dữ liệu - Thiết kế mới
             if page_df.empty:
                 st.info("📭 Không có phiếu nào phù hợp với bộ lọc")
             else:
-                # CSS cho bảng và trạng thái
+                # CSS cho dashboard mới
                 st.markdown("""
                 <style>
-                .dashboard-table {
+                .dashboard-list-table {
                     width: 100%;
                     border-collapse: collapse;
                     margin: 1rem 0;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                     background: white;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                 }
-                .dashboard-table th {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                .dashboard-list-table th {
+                    background: #4a90e2;
                     color: white;
-                    padding: 14px 12px;
+                    padding: 12px;
                     text-align: left;
                     font-weight: 600;
                     font-size: 0.9rem;
-                    border: 1px solid #5a67d8;
+                    border: 1px solid #3a7bc8;
                 }
-                .dashboard-table td {
-                    padding: 12px;
+                .dashboard-list-table td {
+                    padding: 10px 12px;
                     border: 1px solid #e5e7eb;
-                    background: white;
                     font-size: 0.875rem;
-                    vertical-align: middle;
                 }
-                .dashboard-table tr:nth-child(even) {
+                .dashboard-list-table tr:nth-child(even) {
                     background: #f9fafb;
                 }
-                .dashboard-table tr:hover {
+                .dashboard-list-table tr:hover {
                     background: #f3f4f6;
-                    transition: background 0.2s;
                 }
-                .status-badge {
-                    padding: 6px 14px;
-                    border-radius: 20px;
-                    font-weight: 600;
-                    font-size: 0.8rem;
-                    display: inline-block;
-                    text-align: center;
-                    min-width: 130px;
-                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-                }
-                .status-0 { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; } /* Đã nhận - đỏ nhạt */
-                .status-1 { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; } /* Chuyển kho - vàng nhạt */
-                .status-2 { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; } /* Đang kiểm tra - xanh dương nhạt */
-                .status-3 { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; } /* Gửi NCC sửa - tím nhạt */
-                .status-4 { background: #fce7f3; color: #9f1239; border: 1px solid #fbcfe8; } /* Đang sửa chữa - hồng nhạt */
-                .status-5 { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; } /* Hoàn thành sửa chữa - xanh lá nhạt */
-                .status-6 { background: #e0f2fe; color: #0c4a6e; border: 1px solid #bae6fd; } /* Chuyển cửa hàng - xanh cyan nhạt */
-                .status-7 { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; } /* Chờ trả khách - vàng */
-                .status-8 { background: #10b981; color: white; border: 1px solid #059669; box-shadow: 0 2px 4px rgba(16,185,129,0.3); } /* Hoàn thành - xanh lá đậm */
-                .update-time-box {
-                    background: #f3f4f6;
-                    padding: 4px 10px;
-                    border-radius: 6px;
-                    font-size: 0.7rem;
-                    color: #6b7280;
-                    display: block;
-                    margin-top: 6px;
-                    border: 1px solid #e5e7eb;
-                }
-                .detail-link {
-                    color: #3b82f6;
-                    font-weight: 700;
-                    cursor: pointer;
-                    text-decoration: none;
-                    font-size: 1rem;
-                    transition: color 0.2s;
-                }
-                .detail-link:hover {
-                    color: #2563eb;
-                    text-decoration: underline;
-                }
-                .qr-button {
-                    background: white;
-                    border: 2px solid #3b82f6;
-                    color: #3b82f6;
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    text-align: center;
-                    width: 100%;
-                }
-                .qr-button:hover {
-                    background: #3b82f6;
+                .selected-row {
+                    background: #10b981 !important;
                     color: white;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(59,130,246,0.3);
+                }
+                .selected-row td {
+                    color: white;
+                    font-weight: 600;
+                }
+                .status-text {
+                    font-weight: 600;
                 }
                 </style>
                 """, unsafe_allow_html=True)
                 
-                # Tạo bảng HTML với styling đẹp
-                table_rows = []
-                detail_buttons = {}  # Lưu mapping ID -> key để tạo nút
-                
+                # Tạo bảng danh sách phiếu
+                list_data = []
                 for idx, row in page_df.iterrows():
                     qr_code = str(row.get('qr_code', ''))
-                    device_name = str(row.get('device_name', ''))
-                    imei = str(row.get('imei', ''))
                     row_id = row['id']
                     
-                    # Ngày nhận
-                    receive_date = ''
-                    if pd.notna(row.get('received_time')):
+                    # Thời gian (sent_time hoặc received_time)
+                    time_str = ''
+                    if pd.notna(row.get('sent_time')):
                         try:
-                            receive_date = pd.to_datetime(row['received_time']).strftime('%d/%m/%Y')
+                            time_str = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y %H:%M')
                         except:
-                            receive_date = str(row.get('received_time', ''))[:10]
-                    elif pd.notna(row.get('sent_time')):
+                            time_str = str(row.get('sent_time', ''))[:16]
+                    elif pd.notna(row.get('received_time')):
                         try:
-                            receive_date = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y')
+                            time_str = pd.to_datetime(row['received_time']).strftime('%d/%m/%Y %H:%M')
                         except:
-                            receive_date = str(row.get('sent_time', ''))[:10]
+                            time_str = str(row.get('received_time', ''))[:16]
                     
-                    # Ngày trả (completed_time)
-                    return_date = ''
-                    if pd.notna(row.get('completed_time')):
-                        try:
-                            return_date = pd.to_datetime(row['completed_time']).strftime('%d/%m/%Y')
-                        except:
-                            return_date = str(row.get('completed_time', ''))[:10]
+                    # Khách hàng (mặc định "Khách lẻ" hoặc từ store_name)
+                    customer = "Khách lẻ"
+                    if pd.notna(row.get('store_name')) and row.get('store_name'):
+                        customer = str(row.get('store_name', 'Khách lẻ'))
                     
-                    # Trạng thái với màu sắc
+                    # Khách cần trả và đã trả (mặc định 0)
+                    need_pay = "0"
+                    paid = "0"
+                    
+                    # Trạng thái
                     status = str(row.get('status', ''))
-                    status_class = 'status-0'
-                    status_order = {
-                        'Đã nhận': 0,
-                        'Chuyển kho': 1,
-                        'Đang kiểm tra': 2,
-                        'Gửi NCC sửa': 3,
-                        'Đang sửa chữa': 4,
-                        'Hoàn thành sửa chữa': 5,
-                        'Chuyển cửa hàng': 6,
-                        'Chờ trả khách': 7,
-                        'Hoàn thành': 8
-                    }
-                    status_idx = status_order.get(status, 0)
-                    status_class = f'status-{status_idx}'
                     
-                    # Thời gian cập nhật
-                    update_time = ''
-                    if pd.notna(row.get('last_updated')):
-                        try:
-                            update_time = pd.to_datetime(row['last_updated']).strftime('%d/%m/%Y %H:%M')
-                        except:
-                            update_time = str(row.get('last_updated', ''))[:16]
-                    
-                    # Tạo key cho nút chi tiết
-                    detail_key = f"detail_btn_{row_id}_{request_type}"
-                    detail_buttons[row_id] = detail_key
-                    
-                    table_rows.append({
+                    list_data.append({
+                        'id': row_id,
                         'qr_code': qr_code,
-                        'device_name': device_name,
-                        'imei': imei,
-                        'receive_date': receive_date,
-                        'return_date': return_date,
-                        'status': status,
-                        'status_class': status_class,
-                        'update_time': update_time,
-                        'row_id': row_id,
-                        'detail_key': detail_key
+                        'time': time_str,
+                        'customer': customer,
+                        'need_pay': need_pay,
+                        'paid': paid,
+                        'status': status
                     })
                 
-                # Hiển thị bảng HTML
-                table_html = """
+                # Hiển thị bảng danh sách
+                selected_detail_id = st.session_state.get('dashboard_detail_id')
+                
+                list_html = """
                 <div style="overflow-x: auto;">
-                <table class="dashboard-table" style="width: 100%;">
+                <table class="dashboard-list-table" style="width: 100%;">
                     <thead>
                         <tr>
-                            <th style="width: 12%;">Mã Yêu Cầu</th>
-                            <th style="width: 25%;">Tên Hàng</th>
-                            <th style="width: 15%;">IMEI</th>
-                            <th style="width: 10%;">Ngày Nhận</th>
-                            <th style="width: 10%;">Ngày Trả</th>
-                            <th style="width: 18%;">Trạng Thái</th>
-                            <th style="width: 10%;">Chi Tiết</th>
+                            <th style="width: 5%;"></th>
+                            <th style="width: 15%;">Mã yêu cầu</th>
+                            <th style="width: 15%;">Thời gian</th>
+                            <th style="width: 15%;">Khách hàng</th>
+                            <th style="width: 12%;">Khách cần trả</th>
+                            <th style="width: 12%;">Khách đã trả</th>
+                            <th style="width: 26%;">Trạng thái</th>
                         </tr>
                     </thead>
                     <tbody>
                 """
                 
-                for row_data in table_rows:
-                    # Escape HTML để tránh lỗi render
-                    qr_code_escaped = html.escape(str(row_data['qr_code']))
-                    device_name_escaped = html.escape(str(row_data['device_name']))
-                    imei_escaped = html.escape(str(row_data['imei']))
-                    receive_date_escaped = html.escape(str(row_data['receive_date']))
-                    return_date_escaped = html.escape(str(row_data['return_date']))
-                    status_escaped = html.escape(str(row_data['status']))
-                    update_time_escaped = html.escape(str(row_data['update_time'])) if row_data['update_time'] else ''
+                for item in list_data:
+                    row_class = 'selected-row' if item['id'] == selected_detail_id else ''
+                    qr_escaped = html.escape(item['qr_code'])
+                    time_escaped = html.escape(item['time'])
+                    customer_escaped = html.escape(item['customer'])
+                    status_escaped = html.escape(item['status'])
                     
-                    update_time_html = ''
-                    if row_data['update_time']:
-                        update_time_html = f'<div class="update-time-box">Cập nhật: {update_time_escaped}</div>'
-                    
-                    table_html += f"""
-                        <tr>
-                            <td>{qr_code_escaped}</td>
-                            <td>{device_name_escaped}</td>
-                            <td>{imei_escaped}</td>
-                            <td>{receive_date_escaped}</td>
-                            <td>{return_date_escaped}</td>
-                            <td>
-                                <span class="status-badge {row_data['status_class']}">{status_escaped}</span>
-                                {update_time_html}
-                            </td>
-                            <td id="detail-cell-{row_data['row_id']}" style="text-align: center;">
-                                <span class="detail-link" data-shipment-id="{row_data['row_id']}">>>></span>
-                            </td>
+                    list_html += f"""
+                        <tr class="{row_class}">
+                            <td><input type="checkbox"></td>
+                            <td>{qr_escaped}</td>
+                            <td>{time_escaped}</td>
+                            <td>{customer_escaped}</td>
+                            <td>{item['need_pay']}</td>
+                            <td>{item['paid']}</td>
+                            <td class="status-text">{status_escaped}</td>
                         </tr>
                     """
                 
-                table_html += """
+                list_html += """
                     </tbody>
                 </table>
                 </div>
                 """
                 
-                # Render HTML table - thử cả hai cách để đảm bảo hoạt động
-                # Cách 1: Sử dụng components.html (ưu tiên)
-                try:
-                    components.html(table_html, height=500, scrolling=True)
-                except:
-                    # Cách 2: Fallback về st.markdown
-                    st.markdown(table_html, unsafe_allow_html=True)
+                st.markdown(list_html, unsafe_allow_html=True)
                 
-                # Tạo nút chi tiết bằng Streamlit với mã QR code
-                st.markdown("**Nhấn vào mã QR để xem chi tiết:**")
-                
-                # Tạo grid layout cho các nút QR code (tối đa 5 cột)
-                num_cols = min(len(table_rows), 5)
+                # Tạo nút click cho từng mã QR
+                st.write("**Nhấn vào mã QR để xem chi tiết:**")
+                num_cols = min(len(list_data), 5)
                 if num_cols > 0:
-                    detail_cols = st.columns(num_cols)
-                    
-                    for col_idx, row_data in enumerate(table_rows):
-                        with detail_cols[col_idx % num_cols]:
-                            detail_btn_key = f"detail_btn_{row_data['row_id']}_{request_type}"
+                    qr_cols = st.columns(num_cols)
+                    for col_idx, item in enumerate(list_data):
+                        with qr_cols[col_idx % num_cols]:
+                            qr_btn_key = f"qr_btn_{item['id']}_{request_type}"
                             if st.button(
-                                row_data['qr_code'], 
-                                key=detail_btn_key, 
+                                item['qr_code'],
+                                key=qr_btn_key,
                                 use_container_width=True,
-                                type="secondary"
+                                type="primary" if item['id'] == selected_detail_id else "secondary"
                             ):
-                                st.session_state['dashboard_detail_id'] = row_data['row_id']
+                                if st.session_state.get('dashboard_detail_id') == item['id']:
+                                    # Nếu đã chọn, bỏ chọn
+                                    st.session_state['dashboard_detail_id'] = None
+                                else:
+                                    # Chọn phiếu mới
+                                    st.session_state['dashboard_detail_id'] = item['id']
                                 st.rerun()
                 
-                # Hiển thị chi tiết nếu có
-                if st.session_state.get('dashboard_detail_id'):
-                    detail_id = st.session_state['dashboard_detail_id']
-                    detail_shipment = get_shipment_by_id(detail_id)
+                # Hiển thị chi tiết nếu có phiếu được chọn
+                if selected_detail_id:
+                    detail_shipment = get_shipment_by_id(selected_detail_id)
                     
                     if detail_shipment:
-                        st.divider()
-                        st.subheader(f"📋 Chi Tiết Phiếu: {detail_shipment.get('qr_code', '')}")
+                        # Header xanh lá với thông tin phiếu được chọn
+                        st.markdown(f"""
+                        <div style="background: #10b981; color: white; padding: 12px; border-radius: 8px; margin: 16px 0;">
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <input type="checkbox" checked style="width: 20px; height: 20px;">
+                                <span style="font-weight: 700; font-size: 1.1rem;">{html.escape(detail_shipment.get('qr_code', ''))}</span>
+                                <span>{html.escape(list_data[0]['time'] if list_data else '')}</span>
+                                <span>{html.escape(list_data[0]['customer'] if list_data else 'Khách lẻ')}</span>
+                                <span style="margin-left: auto;">0</span>
+                                <span>0</span>
+                                <span>{html.escape(detail_shipment.get('status', ''))}</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
-                        col_detail1, col_detail2 = st.columns([2, 1])
-                        
-                        with col_detail1:
-                            st.write("**Thông tin phiếu:**")
-                            info_col1, info_col2 = st.columns(2)
+                        # Tab "Thông tin"
+                        info_tab = st.tabs(["Thông tin"])[0]
+                        with info_tab:
+                            col_info1, col_info2, col_info3 = st.columns([2, 2, 2])
                             
-                            with info_col1:
-                                st.write(f"**Mã QR:** {detail_shipment.get('qr_code', '')}")
-                                st.write(f"**IMEI:** {detail_shipment.get('imei', '')}")
-                                st.write(f"**Tên thiết bị:** {detail_shipment.get('device_name', '')}")
-                                st.write(f"**Lỗi / Tình trạng:** {detail_shipment.get('capacity', '')}")
+                            with col_info1:
+                                st.write(f"**Mã yêu cầu:** {detail_shipment.get('qr_code', '')}")
+                                time_display = ''
+                                if pd.notna(detail_shipment.get('sent_time')):
+                                    try:
+                                        time_display = pd.to_datetime(detail_shipment['sent_time']).strftime('%d/%m/%Y %H:%M')
+                                    except:
+                                        time_display = str(detail_shipment.get('sent_time', ''))[:16]
+                                st.write(f"**Thời gian:** {time_display}")
+                                st.write(f"**Ngày cập nhật:** {detail_shipment.get('last_updated', '')[:16] if detail_shipment.get('last_updated') else ''}")
+                                st.write(f"**Người nhận:** {detail_shipment.get('created_by', '')}")
+                                st.write(f"**Chi nhánh:** {detail_shipment.get('store_name', 'Chưa có')}")
                             
-                            with info_col2:
-                                st.write(f"**NCC:** {detail_shipment.get('supplier', '')}")
-                                st.write(f"**Trạng thái:** {detail_shipment.get('status', '')}")
+                            with col_info2:
+                                customer_display = "Khách lẻ"
                                 if detail_shipment.get('store_name'):
-                                    st.write(f"**Cửa hàng:** {detail_shipment.get('store_name', '')}")
-                                if detail_shipment.get('sent_time'):
-                                    st.write(f"**Thời gian gửi:** {detail_shipment.get('sent_time', '')}")
-                                if detail_shipment.get('received_time'):
-                                    st.write(f"**Thời gian nhận:** {detail_shipment.get('received_time', '')}")
-                                if detail_shipment.get('completed_time'):
-                                    st.write(f"**Thời gian hoàn thành:** {detail_shipment.get('completed_time', '')}")
-                                if detail_shipment.get('last_updated'):
-                                    st.write(f"**Cập nhật lúc:** {detail_shipment.get('last_updated', '')}")
-                                st.write(f"**Người tạo:** {detail_shipment.get('created_by', '')}")
-                                if detail_shipment.get('updated_by'):
-                                    st.write(f"**Người cập nhật:** {detail_shipment.get('updated_by', '')}")
+                                    customer_display = detail_shipment.get('store_name')
+                                st.write(f"**Khách hàng:** {customer_display}")
+                                st.write(f"**Bảng giá:** Bảng giá chung")
+                                st.write(f"**Trạng thái:** {detail_shipment.get('status', '')}")
+                                st.write(f"**Nơi tiếp nhận:** Tại cửa hàng")
                             
-                            if detail_shipment.get('notes'):
-                                st.write(f"**Ghi chú:** {detail_shipment.get('notes', '')}")
+                            with col_info3:
+                                st.text_area("Ghi chú", value=detail_shipment.get('notes', '') or '', height=150, key=f"notes_{selected_detail_id}")
                         
-                        with col_detail2:
-                            # Form cập nhật trạng thái
-                            st.write("**Cập nhật trạng thái:**")
+                        # Bảng chi tiết item
+                        st.markdown("### Chi tiết sản phẩm")
+                        item_table_data = [{
+                            'Mã hàng': detail_shipment.get('qr_code', ''),
+                            'Tên hàng': detail_shipment.get('device_name', ''),
+                            'IMEI': detail_shipment.get('imei', ''),
+                            'Ghi chú hàng yêu cầu': detail_shipment.get('capacity', ''),
+                            'Số lượng': '1',
+                            'Trạng thái sửa chữa': detail_shipment.get('status', ''),
+                            'Ngày hoàn thành': detail_shipment.get('completed_time', '')[:10] if detail_shipment.get('completed_time') else '',
+                            'Tổng phí': '0'
+                        }]
+                        
+                        item_df = pd.DataFrame(item_table_data)
+                        st.dataframe(item_df, use_container_width=True, hide_index=True)
+                        
+                        # Tổng kết
+                        col_sum1, col_sum2 = st.columns([3, 1])
+                        with col_sum1:
+                            st.write("**Tổng số lượng:** 1")
+                            st.write("**Tổng tiền hàng:** 0")
+                            st.write("**Giảm giá đơn hàng:** 0")
+                            st.write("**Khách cần trả:** 0")
+                            st.write("**Khách đã trả:** 0")
+                            st.write("**Còn cần trả:** 0")
+                        
+                        with col_sum2:
+                            if st.button("Xuất file", key=f"export_{selected_detail_id}", use_container_width=True):
+                                st.info("Chức năng xuất file đang được phát triển")
+                        
+                        # Form cập nhật trạng thái
+                        st.divider()
+                        st.subheader("Cập nhật trạng thái")
+                        
+                        col_update1, col_update2 = st.columns([2, 1])
+                        
+                        with col_update1:
                             current_status = detail_shipment.get('status', '')
-                            
-                            # Tạo danh sách trạng thái động
                             status_options = STATUS_VALUES.copy()
                             suppliers_df = get_suppliers()
                             for _, supplier_row in suppliers_df.iterrows():
@@ -2266,81 +2210,84 @@ def show_dashboard():
                                 "Trạng thái mới:",
                                 status_options,
                                 index=current_status_idx,
-                                key=f"update_status_{detail_id}"
+                                key=f"update_status_{selected_detail_id}"
                             )
                             
                             update_notes = st.text_area(
                                 "Ghi chú cập nhật:",
                                 value="",
-                                key=f"update_notes_{detail_id}"
+                                key=f"update_notes_{selected_detail_id}",
+                                height=100
                             )
                             
                             uploaded_image_detail = st.file_uploader(
                                 "Upload ảnh (tùy chọn)",
                                 type=["png", "jpg", "jpeg"],
                                 accept_multiple_files=True,
-                                key=f"upload_image_detail_{detail_id}"
+                                key=f"upload_image_detail_{selected_detail_id}"
                             )
                             
-                            if st.button("💾 Cập nhật", key=f"update_btn_{detail_id}", type="primary"):
-                                current_user = get_current_user()
-                                
-                                image_url = detail_shipment.get('image_url')
-                                if uploaded_image_detail:
-                                    urls = []
-                                    for idx, f in enumerate(uploaded_image_detail, start=1):
-                                        file_bytes = f.getvalue()
-                                        mime = f.type or "image/jpeg"
-                                        orig_name = f.name or "image.jpg"
-                                        ext = ""
-                                        if "." in orig_name:
-                                            ext = orig_name.split(".")[-1]
-                                        if not ext:
-                                            ext = "jpg"
-                                        sanitized_qr = detail_shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
-                                        sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
-                                        drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
-                                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                        if upload_res['success']:
-                                            urls.append(upload_res['url'])
-                                        else:
-                                            st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                            st.stop()
-                                    if urls:
-                                        if image_url:
-                                            image_url = f"{image_url};{';'.join(urls)}"
-                                        else:
-                                            image_url = ";".join(urls)
-                                
-                                result = update_shipment(
-                                    shipment_id=detail_id,
-                                    status=new_status,
-                                    notes=update_notes.strip() if update_notes.strip() else detail_shipment.get('notes'),
-                                    updated_by=current_user,
-                                    image_url=image_url
-                                )
-                                
-                                if result['success']:
-                                    st.success("✅ Đã cập nhật thành công!")
-                                    # Notify Telegram if needed
-                                    updated = get_shipment_by_id(detail_id)
-                                    if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
-                                        res = notify_shipment_if_received(
-                                            detail_id,
-                                            force=not detail_shipment.get('telegram_message_id'),
-                                            is_update_image=(uploaded_image_detail is not None)
-                                        )
-                                        if res and not res.get('success'):
-                                            st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
+                                if st.button("💾 Cập nhật", key=f"update_btn_{selected_detail_id}", type="primary", use_container_width=True):
+                                    current_user = get_current_user()
+                                    
+                                    image_url = detail_shipment.get('image_url')
+                                    if uploaded_image_detail:
+                                        urls = []
+                                        for idx, f in enumerate(uploaded_image_detail, start=1):
+                                            file_bytes = f.getvalue()
+                                            mime = f.type or "image/jpeg"
+                                            orig_name = f.name or "image.jpg"
+                                            ext = ""
+                                            if "." in orig_name:
+                                                ext = orig_name.split(".")[-1]
+                                            if not ext:
+                                                ext = "jpg"
+                                            sanitized_qr = detail_shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                            sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
+                                            drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
+                                            upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                            if upload_res['success']:
+                                                urls.append(upload_res['url'])
+                                            else:
+                                                st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                                st.stop()
+                                        if urls:
+                                            if image_url:
+                                                image_url = f"{image_url};{';'.join(urls)}"
+                                            else:
+                                                image_url = ";".join(urls)
+                                    
+                                    result = update_shipment(
+                                        shipment_id=selected_detail_id,
+                                        status=new_status,
+                                        notes=update_notes.strip() if update_notes.strip() else detail_shipment.get('notes'),
+                                        updated_by=current_user,
+                                        image_url=image_url
+                                    )
+                                    
+                                    if result['success']:
+                                        st.success("✅ Đã cập nhật thành công!")
+                                        updated = get_shipment_by_id(selected_detail_id)
+                                        if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
+                                            res = notify_shipment_if_received(
+                                                selected_detail_id,
+                                                force=not detail_shipment.get('telegram_message_id'),
+                                                is_update_image=(uploaded_image_detail is not None)
+                                            )
+                                            if res and not res.get('success'):
+                                                st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {result['error']}")
+                            
+                            with col_btn2:
+                                if st.button("❌ Đóng", key=f"close_detail_{selected_detail_id}", use_container_width=True):
                                     st.session_state['dashboard_detail_id'] = None
                                     st.rerun()
-                                else:
-                                    st.error(f"❌ {result['error']}")
-                            
-                            if st.button("❌ Đóng", key=f"close_detail_{detail_id}"):
-                                st.session_state['dashboard_detail_id'] = None
-                                st.rerun()
-                            
+                        
+                        with col_update2:
                             # Hiển thị ảnh nếu có
                             if detail_shipment.get('image_url'):
                                 st.write("**Ảnh đính kèm:**")
