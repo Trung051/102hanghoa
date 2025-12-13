@@ -1232,94 +1232,6 @@ def show_dashboard():
         transform: translateY(-1px);
     }
     
-    /* Filter box styling with animation */
-    .filter-box-small {
-        border: 1px solid #e5e7eb;
-        border-radius: 0.75rem;
-        padding: 1.25rem;
-        background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        animation: slideInLeft 0.3s ease-out;
-    }
-    
-    /* Hide any input/search box above or in filter box area */
-    .filter-box-small input[type="text"],
-    .filter-box-small input[type="search"],
-    div[data-testid="stTextInputContainer"]:has(+ div:has(.filter-box-small)),
-    div:has(.filter-box-small) ~ div[data-testid="stTextInputContainer"] {
-        display: none !important;
-    }
-    
-    /* Hide any large input box container before filter box */
-    div[data-testid="stVerticalBlock"] > div:first-child:has(div[data-testid="stTextInputContainer"]) {
-        display: none !important;
-    }
-    
-    @keyframes slideInLeft {
-            from {
-                opacity: 0;
-            transform: translateX(-20px);
-            }
-            to {
-                opacity: 1;
-            transform: translateX(0);
-        }
-    }
-    
-    .filter-box-small:hover {
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        transform: translateY(-2px);
-    }
-    
-    /* Filter header */
-    .filter-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 2px solid #e5e7eb;
-    }
-    
-    .filter-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: #1f2937;
-        margin: 0;
-    }
-    
-    /* Filter buttons styling */
-    button[key="hide_filter_box"], button[key="show_filter_box"] {
-        border: none !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 0.375rem 0.5rem !important;
-        font-size: 1.25rem !important;
-        color: #6b7280 !important;
-        border-radius: 0.375rem !important;
-        transition: all 0.2s ease !important;
-        cursor: pointer !important;
-    }
-    
-    button[key="hide_filter_box"]:hover, button[key="show_filter_box"]:hover {
-        background-color: #f3f4f6 !important;
-        color: #1f2937 !important;
-        transform: scale(1.1);
-    }
-    
-    /* Selectbox styling */
-    .stSelectbox > div > div {
-        border-radius: 0.5rem;
-        border: 1px solid #d1d5db;
-        transition: all 0.2s ease;
-    }
-    
-    .stSelectbox > div > div:hover {
-        border-color: #9ca3af;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-    
     /* Button styling */
     .stButton > button {
         border-radius: 0.5rem;
@@ -1365,102 +1277,9 @@ def show_dashboard():
         border-color: #9ca3af;
     }
     
-    /* Data editor styling */
-    div[data-testid="stDataEditor"] {
-        border-radius: 0.75rem;
-        border: 1px solid #e5e7eb;
-        overflow: hidden;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    }
-    
-    div[data-testid="stDataEditor"] > div {
-        background: white;
-    }
-    
-    /* Table header styling */
-    div[data-testid="stDataEditor"] thead th {
-        background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-        font-weight: 600;
-        color: #1f2937;
-        border-bottom: 2px solid #e5e7eb;
-        padding: 0.75rem;
-    }
-    
-    /* Table row styling */
-    div[data-testid="stDataEditor"] tbody tr {
-        transition: background-color 0.2s ease;
-    }
-    
-    div[data-testid="stDataEditor"] tbody tr:hover {
-        background-color: #f9fafb;
-    }
-    
-    div[data-testid="stDataEditor"] tbody tr:nth-child(even) {
-        background-color: #fafafa;
-    }
-    
-    div[data-testid="stDataEditor"] tbody tr:nth-child(even):hover {
-        background-color: #f3f4f6;
-    }
-    
-    /* Table cell styling */
-    div[data-testid="stDataEditor"] td {
-        padding: 0.75rem;
-        border-bottom: 1px solid #f3f4f6;
-    }
-    
-    /* Checkbox styling */
-    div[data-testid="stDataEditor"] input[type="checkbox"] {
-        width: 1.25rem;
-        height: 1.25rem;
-        cursor: pointer;
-        accent-color: #ef4444;
-    }
-    
-    /* Detail button styling */
-    div[data-testid="stDataEditor"] button {
-        border-radius: 0.375rem;
-        transition: all 0.2s ease;
-    }
-    
-    div[data-testid="stDataEditor"] button:hover {
-        transform: scale(1.05);
-    }
-    
-    /* Info message styling */
-    .stInfo {
-        border-radius: 0.5rem;
-        border-left: 4px solid #3b82f6;
-        background: #eff6ff;
-    }
-    
     /* Smooth transitions */
     * {
         transition: background-color 0.2s ease, border-color 0.2s ease;
-    }
-    
-    /* Hide filter animation */
-    @keyframes slideOutLeft {
-        from {
-            opacity: 1;
-            transform: translateX(0);
-        }
-        to {
-            opacity: 0;
-            transform: translateX(-20px);
-        }
-    }
-    
-    /* Show filter animation */
-    @keyframes slideInRight {
-        from {
-            opacity: 0;
-            transform: translateX(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
     }
     
     /* Battery Status Indicator */
@@ -1542,115 +1361,8 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Initialize filter box visibility state
-    if 'filter_box_visible' not in st.session_state:
-        st.session_state['filter_box_visible'] = True
-    
-    # Filter box and tabs layout - filter box on left, tabs on right
-    # Adjust columns based on filter visibility
-    if st.session_state['filter_box_visible']:
-        col_filter_box, col_tabs = st.columns([0.25, 0.75])
-    else:
-        col_filter_box = None
-        col_tabs = st.columns(1)[0]
-    
-    if col_filter_box:
-        with col_filter_box:
-            # Professional filter box with animation
-            st.markdown('<div class="filter-box-small">', unsafe_allow_html=True)
-            
-            # Header with title and hide button
-            col_title, col_hide = st.columns([0.85, 0.15])
-            with col_title:
-                st.markdown('<p class="filter-title">🔍 Bộ lọc</p>', unsafe_allow_html=True)
-            with col_hide:
-                if st.button("✕", key="hide_filter_box", help="Ẩn bộ lọc"):
-                    st.session_state['filter_box_visible'] = False
-                    st.rerun()
-            
-            st.markdown("<hr style='margin: 0.75rem 0; border: none; border-top: 1px solid #e5e7eb;'>", unsafe_allow_html=True)
-            
-            # Status filter (compact)
-            status_options = ["Toàn bộ"] + STATUS_VALUES
-            current_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-            status_index = 0
-            if current_status in status_options:
-                status_index = status_options.index(current_status)
-            selected_status = st.selectbox(
-                "Trạng thái:",
-                status_options,
-                key="filter_status_dash",
-                index=status_index
-            )
-            
-            # Time filter (compact) - Add "Toàn bộ" option
-            time_options = ["Toàn bộ", "Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
-            current_time = st.session_state.get('filter_time_dash', 'Toàn bộ')
-            time_index = 0
-            if current_time in time_options:
-                time_index = time_options.index(current_time)
-            selected_time = st.selectbox(
-                "Thời gian:",
-                time_options,
-                key="filter_time_dash",
-                index=time_index
-            )
-            
-            # Date range picker if "Thời gian tự chọn" is selected
-            date_range = None
-            if selected_time == "Thời gian tự chọn":
-                if 'sent_time' in df.columns:
-                    try:
-                        df_copy = df.copy()
-                        df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                        min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                        max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                        
-                        date_range = st.date_input(
-                            "Khoảng thời gian:",
-                            value=(min_date, max_date),
-                            min_value=min_date,
-                            max_value=max_date,
-                            key="dash_date_range_custom"
-                        )
-                    except:
-                        pass
-            
-            # Display setting (compact)
-            display_limit = st.selectbox(
-                "Hiển thị:",
-                [50, 100, 200, 500, 1000],
-                index=1,
-                key="display_limit_dash"
-            )
-            
-            # Action buttons with spacing - white background like sidebar
-            st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
-            if st.button("🖨️ In Tem", use_container_width=True, key="print_labels_dash"):
-                st.session_state['print_labels_dash_clicked'] = True
-                st.rerun()
-            
-            st.markdown("<div style='margin-top: 0.5rem;'>", unsafe_allow_html=True)
-            if st.button("📊 Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
-                # Export will be handled after filtering
-                st.session_state['export_report_clicked'] = True
-                st.rerun()
-            st.markdown("</div></div>", unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        # Show button to show filter when hidden - place before tabs with animation
-        col_show_btn, col_tabs_full = st.columns([0.05, 0.95])
-        with col_show_btn:
-            st.markdown("<div style='padding-top: 0.5rem;'>", unsafe_allow_html=True)
-            if st.button("☰", key="show_filter_box", help="Hiện bộ lọc", use_container_width=True):
-                st.session_state['filter_box_visible'] = True
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-        col_tabs = col_tabs_full
-    
-    with col_tabs:
-        tabs = st.tabs(REQUEST_TYPES)
+    # Create tabs for request types (no filter box)
+    tabs = st.tabs(REQUEST_TYPES)
     
     # Determine which tab is active by checking session state
     if 'active_request_type_tab' not in st.session_state:
@@ -1678,18 +1390,7 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Get filter values from session state (in case filter box is hidden)
-    # Always get filter values from session state to ensure consistency
-    # Default to show all data (not filtered)
-    selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-    selected_time = st.session_state.get('filter_time_dash', 'Toàn bộ')  # Changed default to show all
-    display_limit = st.session_state.get('display_limit_dash', 100)
-    date_range = st.session_state.get('dash_date_range_custom', None)
-    
-    # Table column (full width)
-    col_table = st.columns(1)[0]
-    
-    # Sort by sent_time DESC (newest first) before applying filters
+    # Sort by sent_time DESC (newest first)
     if 'sent_time' in filtered_by_type.columns:
         try:
             filtered_by_type['sent_time'] = pd.to_datetime(filtered_by_type['sent_time'], errors='coerce')
@@ -1697,71 +1398,12 @@ def show_dashboard():
         except:
             pass
     
-    # Apply status filter
-    if selected_status != "Toàn bộ":
-        filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
-    
-    # Apply time filter
-    if selected_time != "Toàn bộ" and selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
-        try:
-            df_copy = filtered_by_type.copy()
-            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-            today = datetime.now().date()
-            
-            if selected_time == "Hôm nay":
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == today]
-            elif selected_time == "Hôm qua":
-                yesterday = (datetime.now() - pd.Timedelta(days=1)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == yesterday]
-            elif selected_time == "1 tuần":
-                week_ago = (datetime.now() - pd.Timedelta(days=7)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= week_ago]
-            elif selected_time == "1 tháng":
-                month_ago = (datetime.now() - pd.Timedelta(days=30)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= month_ago]
-        except:
-            pass
-    elif selected_time == "Thời gian tự chọn" and date_range and len(date_range) == 2 and 'sent_time' in filtered_by_type.columns:
-        try:
-            df_copy = filtered_by_type.copy()
-            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-            filtered_by_type = df_copy[
-                (df_copy['sent_time'].dt.date >= date_range[0]) &
-                (df_copy['sent_time'].dt.date <= date_range[1])
-            ]
-        except:
-            pass
-    
-    # Handle export report
-    if st.session_state.get('export_report_clicked', False):
-        csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Tải CSV",
-            data=csv,
-            file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True,
-            key="download_csv_dash"
-        )
-        st.session_state['export_report_clicked'] = False
-    
-    # Sort again after filtering to ensure newest first
-    if 'sent_time' in filtered_by_type.columns:
-        try:
-            filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
-        except:
-            pass
-    
-    # Limit display
-    filtered_by_type = filtered_by_type.head(display_limit)
-    
     # Initialize selected shipments for printing
     if 'selected_shipments_for_print' not in st.session_state:
         st.session_state['selected_shipments_for_print'] = []
     
     # Main data table - display in the active tab
-    with col_table:
-        with tabs[active_tab_idx]:
+    with tabs[active_tab_idx]:
             if filtered_by_type.empty:
                 st.markdown(f"""
                 <div style="
@@ -1899,23 +1541,34 @@ def show_dashboard():
                         show_shipment_detail_popup(st.session_state['detail_shipment_id'])
                         st.session_state['detail_shipment_id'] = None
                     
-                
-                # Handle print labels button
-                if st.session_state.get('print_labels_dash_clicked', False):
+                    # Action buttons for selected items
                     if selected_ids:
-                        # Generate labels for selected shipments
-                        qr_codes = []
-                        for sid in selected_ids:
-                            if sid in filtered_by_type['id'].values:
-                                qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
-                        if qr_codes:
-                            st.session_state['nav'] = "Quản Lý Phiếu"
-                            st.session_state['selected_qr_codes'] = qr_codes
-                            st.session_state['print_labels_dash_clicked'] = False
-                            st.rerun()
-                    else:
-                        st.warning("Vui lòng chọn ít nhất một phiếu để in tem")
-                        st.session_state['print_labels_dash_clicked'] = False
+                        col_btn1, col_btn2 = st.columns(2)
+                        with col_btn1:
+                            if st.button("🖨️ In Tem", use_container_width=True, key=f"print_selected_{active_tab_idx}"):
+                                # Generate labels for selected shipments
+                                qr_codes = []
+                                for sid in selected_ids:
+                                    if sid in filtered_by_type['id'].values:
+                                        qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
+                                if qr_codes:
+                                    st.session_state['nav'] = "Quản Lý Phiếu"
+                                    st.session_state['selected_qr_codes'] = qr_codes
+                                    st.rerun()
+                        
+                        with col_btn2:
+                            if st.button("📊 Xuất Báo Cáo", use_container_width=True, key=f"export_selected_{active_tab_idx}"):
+                                # Export selected items
+                                selected_df = filtered_by_type[filtered_by_type['id'].isin(selected_ids)]
+                                csv = selected_df.to_csv(index=False).encode('utf-8-sig')
+                                st.download_button(
+                                    label="📥 Tải CSV",
+                                    data=csv,
+                                    file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                    key=f"download_csv_{active_tab_idx}"
+                                )
 
 
 def show_shipment_detail_popup(shipment_id):
