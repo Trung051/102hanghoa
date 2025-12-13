@@ -1243,6 +1243,19 @@ def show_dashboard():
         animation: slideInLeft 0.3s ease-out;
     }
     
+    /* Hide any input/search box above or in filter box area */
+    .filter-box-small input[type="text"],
+    .filter-box-small input[type="search"],
+    div[data-testid="stTextInputContainer"]:has(+ div:has(.filter-box-small)),
+    div:has(.filter-box-small) ~ div[data-testid="stTextInputContainer"] {
+        display: none !important;
+    }
+    
+    /* Hide any large input box container before filter box */
+    div[data-testid="stVerticalBlock"] > div:first-child:has(div[data-testid="stTextInputContainer"]) {
+        display: none !important;
+    }
+    
     @keyframes slideInLeft {
             from {
                 opacity: 0;
