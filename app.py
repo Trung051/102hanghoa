@@ -1237,22 +1237,95 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Initialize filter popup state
-    if 'filter_popup_open' not in st.session_state:
-        st.session_state['filter_popup_open'] = False
-    
-    # Tabs for request types with filter toggle button BEFORE tabs
-    tabs_row = st.container()
-    with tabs_row:
-        # Use columns to place button BEFORE tabs
-        col_btn, col_tabs = st.columns([0.05, 0.95])
+    # Filter box and tabs layout - filter box on left, tabs on right
+    filter_tabs_row = st.container()
+    with filter_tabs_row:
+        # Use columns: small filter box on left, tabs on right
+        col_filter_box, col_tabs = st.columns([0.25, 0.75])
         
-        with col_btn:
-            # Filter toggle button (like sidebar toggle)
-            st.write("")  # Spacing to align with tabs
-            if st.button("☰", key="filter_toggle_btn", help="Mở bộ lọc", use_container_width=True):
-                st.session_state['filter_popup_open'] = True
+        with col_filter_box:
+            # Small filter box with border
+            st.markdown("""
+            <style>
+            .filter-box-small {
+                border: 1px solid #e0e0e0;
+                border-radius: 0.5rem;
+                padding: 1rem;
+                background: white;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            </style>
+            <div class="filter-box-small">
+            """, unsafe_allow_html=True)
+            
+            st.markdown("**Bộ lọc**")
+            st.markdown("---")
+            
+            # Status filter (compact)
+            status_options = ["Toàn bộ"] + STATUS_VALUES
+            current_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
+            status_index = 0
+            if current_status in status_options:
+                status_index = status_options.index(current_status)
+            selected_status = st.selectbox(
+                "Trạng thái:",
+                status_options,
+                key="filter_status_dash",
+                index=status_index
+            )
+            
+            # Time filter (compact)
+            time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+            current_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+            time_index = 0
+            if current_time in time_options:
+                time_index = time_options.index(current_time)
+            selected_time = st.selectbox(
+                "Thời gian:",
+                time_options,
+                key="filter_time_dash",
+                index=time_index
+            )
+            
+            # Date range picker if "Thời gian tự chọn" is selected
+            date_range = None
+            if selected_time == "Thời gian tự chọn":
+                if 'sent_time' in df.columns:
+                    try:
+                        df_copy = df.copy()
+                        df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                        min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        
+                        date_range = st.date_input(
+                            "Khoảng thời gian:",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                            key="dash_date_range_custom"
+                        )
+                    except:
+                        pass
+            
+            # Display setting (compact)
+            display_limit = st.selectbox(
+                "Hiển thị:",
+                [50, 100, 200, 500, 1000],
+                index=1,
+                key="display_limit_dash"
+            )
+            
+            # Action buttons (compact)
+            if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+                st.session_state['print_labels_dash_clicked'] = True
                 st.rerun()
+            
+            if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
+                # Export will be handled after filtering
+                st.session_state['export_report_clicked'] = True
+                st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
         with col_tabs:
             tabs = st.tabs(REQUEST_TYPES)
@@ -1283,124 +1356,10 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Filter popup modal - show as a prominent container at top
-    if st.session_state.get('filter_popup_open', False):
-        # Create a prominent filter container with border and shadow
-        with st.container():
-            # Add styling for the modal container
-            st.markdown("""
-            <style>
-            .filter-popup-container {
-                border: 2px solid #e0e0e0;
-                border-radius: 0.5rem;
-                padding: 1.5rem;
-                background: white;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-                margin-bottom: 1rem;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            # Modal content in a styled container
-            st.markdown('<div class="filter-popup-container">', unsafe_allow_html=True)
-            # Header with close button
-            col_title, col_close = st.columns([0.85, 0.15])
-            with col_title:
-                st.subheader("Bộ lọc")
-            with col_close:
-                if st.button("✕", key="close_filter_modal", help="Đóng"):
-                    st.session_state['filter_popup_open'] = False
-                    st.rerun()
-            
-            st.divider()
-            
-            # Status filter
-            status_options = ["Toàn bộ"] + STATUS_VALUES
-            current_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-            status_index = 0
-            if current_status in status_options:
-                status_index = status_options.index(current_status)
-            selected_status = st.selectbox(
-                "Trạng thái:",
-                status_options,
-                key="filter_status_dash",
-                index=status_index
-            )
-            
-            # Time filter
-            time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
-            current_time = st.session_state.get('filter_time_dash', 'Hôm nay')
-            time_index = 0
-            if current_time in time_options:
-                time_index = time_options.index(current_time)
-            selected_time = st.selectbox(
-                "Thời gian:",
-                time_options,
-                key="filter_time_dash",
-                index=time_index
-            )
-            
-            # Date range picker if "Thời gian tự chọn" is selected
-            date_range = None
-            if selected_time == "Thời gian tự chọn":
-                if 'sent_time' in filtered_by_type.columns:
-                    try:
-                        df_copy = filtered_by_type.copy()
-                        df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                        min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                        max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
-                        
-                        date_range = st.date_input(
-                            "Khoảng thời gian:",
-                            value=(min_date, max_date),
-                            min_value=min_date,
-                            max_value=max_date,
-                            key="dash_date_range_custom"
-                        )
-                    except:
-                        pass
-            
-            # Display setting
-            display_limit = st.selectbox(
-                "Hiển thị:",
-                [50, 100, 200, 500, 1000],
-                index=1,
-                key="display_limit_dash"
-            )
-            
-            # Action buttons
-            st.divider()
-            if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash_popup"):
-                st.session_state['print_labels_dash_clicked'] = True
-                st.session_state['filter_popup_open'] = False
-                st.rerun()
-            
-            if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash_popup"):
-                csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Tải CSV",
-                    data=csv,
-                    file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    key="download_csv_popup"
-                )
-            
-            # Close button at bottom
-            st.divider()
-            if st.button("Đóng", use_container_width=True, key="close_filter_modal_bottom", type="secondary"):
-                st.session_state['filter_popup_open'] = False
-                st.rerun()
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+    # Get filter values (already set in filter box above)
+    # selected_status, selected_time, display_limit, date_range are already set above
     
-    # Get filter values from session state (with defaults)
-    selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-    selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
-    display_limit = st.session_state.get('display_limit_dash', 100)
-    date_range = st.session_state.get('dash_date_range_custom', None)
-    
-    # Table column (full width now)
+    # Table column (full width)
     col_table = st.columns(1)[0]
     
     # Apply status filter
@@ -1437,6 +1396,19 @@ def show_dashboard():
             ]
         except:
             pass
+    
+    # Handle export report
+    if st.session_state.get('export_report_clicked', False):
+        csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Tải CSV",
+            data=csv,
+            file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="download_csv_dash"
+        )
+        st.session_state['export_report_clicked'] = False
     
     # Limit display
     filtered_by_type = filtered_by_type.head(display_limit)
