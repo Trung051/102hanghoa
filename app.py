@@ -1200,6 +1200,18 @@ def show_dashboard():
         }
         """
     
+    # CSS to remove border from filter toggle button
+    filter_btn_css = """
+    button[key="show_filter_btn"], button[key="hide_filter_btn"] {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    button[key="show_filter_btn"]:hover, button[key="hide_filter_btn"]:hover {
+        background-color: rgba(250, 250, 250, 0.8) !important;
+    }
+    """
+    
     st.markdown(f"""
     <style>
     .main .block-container {{
@@ -1215,6 +1227,7 @@ def show_dashboard():
         margin-bottom: 1rem;
     }}
     {center_tabs_css}
+    {filter_btn_css}
     </style>
     """, unsafe_allow_html=True)
     st.title("QUẢN LÝ SỬA CHỮA")
@@ -1239,16 +1252,12 @@ def show_dashboard():
     if 'filter_visible' not in st.session_state:
         st.session_state['filter_visible'] = True
     
-    # Tabs for request types with filter toggle button next to tabs
-    # Create a row with tabs and button side by side
+    # Tabs for request types with filter toggle button BEFORE tabs
+    # Create a row with button first, then tabs
     tabs_row = st.container()
     with tabs_row:
-        # Use columns to place tabs and button on same line
-        # Button should be right next to the last tab
-        col_tabs, col_btn = st.columns([0.92, 0.08])
-        
-        with col_tabs:
-            tabs = st.tabs(REQUEST_TYPES)
+        # Use columns to place button BEFORE tabs
+        col_btn, col_tabs = st.columns([0.05, 0.95])
         
         with col_btn:
             # Align button vertically with tabs
@@ -1261,6 +1270,9 @@ def show_dashboard():
                 if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc", use_container_width=True):
                     st.session_state['filter_visible'] = True
                     st.rerun()
+        
+        with col_tabs:
+            tabs = st.tabs(REQUEST_TYPES)
     
     # Determine which tab is active by checking session state
     if 'active_request_type_tab' not in st.session_state:
