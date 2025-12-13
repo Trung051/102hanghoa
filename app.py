@@ -1365,10 +1365,7 @@ def show_dashboard():
         selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
         display_limit = st.session_state.get('display_limit_dash', 100)
         date_range = None
-        # Show button to expand filter
-        if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc"):
-            st.session_state['filter_visible'] = True
-            st.rerun()
+        # Note: Filter toggle button is now in the tabs row above, so no need to show it here
     
     # Apply status filter
     if selected_status != "Toàn bộ":
