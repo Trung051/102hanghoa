@@ -30,40 +30,45 @@ USERS = {
     'cuahang3': 'ch123'
 }
 
-# Shipment status values - Luồng mới (yêu cầu cập nhật)
+# Loại yêu cầu (Request Types)
+REQUEST_TYPES = [
+    'Bảo hành đổi máy',
+    'Bảo hành sửa chữa',
+    'Sửa chữa dịch vụ',
+    'Sửa chữa nhập hàng',
+    'Sửa chữa thu cũ'
+]
+
+# Shipment status values - Cập nhật theo yêu cầu mới
 STATUS_VALUES = [
-    'Phiếu tạm',
-    'Đang gửi',  # Trạng thái mặc định khi tạo mới
-    'Chuyển kho',
-    'Đang xử lý',
     'Đã nhận',
-    'Nhập kho',
-    'Nhập kho xử lý',
-    'Gửi NCC',
-    'Hoàn thành chuyển SR',
-    'Kết thúc',
-    'Hư hỏng',
-    'Mất'
+    'Chuyển kho',
+    'Đang kiểm tra',
+    'Gửi NCC sửa',
+    'Đang sửa chữa',
+    'Hoàn thành sửa chữa',
+    'Chuyển cửa hàng',
+    'Chờ trả khách',
+    'Hoàn thành'
 ]
 
 # Trạng thái được coi là "đang hoạt động" (chưa hoàn thành)
 ACTIVE_STATUSES = [
-    'Phiếu tạm',
-    'Đang gửi',
-    'Chuyển kho',
-    'Đang xử lý',
     'Đã nhận',
-    'Nhập kho',
-    'Nhập kho xử lý',
-    'Gửi NCC',
-    'Hoàn thành chuyển SR'
+    'Chuyển kho',
+    'Đang kiểm tra',
+    'Gửi NCC sửa',
+    'Đang sửa chữa',
+    'Hoàn thành sửa chữa',
+    'Chuyển cửa hàng',
+    'Chờ trả khách'
 ]
 
 # Trạng thái hoàn thành
-COMPLETED_STATUSES = ['Kết thúc']
+COMPLETED_STATUSES = ['Hoàn thành']
 
 # Default status for new shipments
-DEFAULT_STATUS = 'Đang gửi'
+DEFAULT_STATUS = 'Đã nhận'
 
 # Default suppliers data (will be seeded into database)
 DEFAULT_SUPPLIERS = [
