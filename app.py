@@ -1190,44 +1190,33 @@ def show_update_shipment_form(current_user, found_shipment):
 
 def show_dashboard():
     """Show dashboard with request type tabs and filters"""
-    # Custom CSS to move title to top and center tabs when filter is open
-    filter_visible = st.session_state.get('filter_visible', True)
-    center_tabs_css = ""
-    if filter_visible:
-        center_tabs_css = """
-        div[data-testid="stTabs"] > div > div[data-baseweb="tab-list"] {
-            justify-content: center !important;
-        }
-        """
-    
-    # CSS to remove border from filter toggle button
-    filter_btn_css = """
-    button[key="show_filter_btn"], button[key="hide_filter_btn"] {
-        border: none !important;
-        background: transparent !important;
-        box-shadow: none !important;
-    }
-    button[key="show_filter_btn"]:hover, button[key="hide_filter_btn"]:hover {
-        background-color: rgba(250, 250, 250, 0.8) !important;
-    }
-    """
-    
-    st.markdown(f"""
+    # Custom CSS to move title to top and style filter button like sidebar toggle
+    st.markdown("""
     <style>
-    .main .block-container {{
+    .main .block-container {
         padding-top: 0.2rem;
         padding-bottom: 1rem;
-    }}
-    h1 {{
+    }
+    h1 {
         margin-top: 0;
         padding-top: 0;
         margin-bottom: 0.3rem;
-    }}
-    div[data-testid="stTabs"] {{
+    }
+    div[data-testid="stTabs"] {
         margin-bottom: 1rem;
-    }}
-    {center_tabs_css}
-    {filter_btn_css}
+    }
+    /* Style filter button like sidebar toggle */
+    button[key="filter_toggle_btn"] {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0.25rem 0.5rem !important;
+        font-size: 1.2rem !important;
+        color: rgb(49, 51, 63) !important;
+    }
+    button[key="filter_toggle_btn"]:hover {
+        background-color: rgba(250, 250, 250, 0.8) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     st.title("QUẢN LÝ SỬA CHỮA")
@@ -1248,28 +1237,22 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Initialize filter visibility state BEFORE using it
-    if 'filter_visible' not in st.session_state:
-        st.session_state['filter_visible'] = True
+    # Initialize filter popup state
+    if 'filter_popup_open' not in st.session_state:
+        st.session_state['filter_popup_open'] = False
     
     # Tabs for request types with filter toggle button BEFORE tabs
-    # Create a row with button first, then tabs
     tabs_row = st.container()
     with tabs_row:
         # Use columns to place button BEFORE tabs
         col_btn, col_tabs = st.columns([0.05, 0.95])
         
         with col_btn:
-            # Align button vertically with tabs
+            # Filter toggle button (like sidebar toggle)
             st.write("")  # Spacing to align with tabs
-            if st.session_state['filter_visible']:
-                if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
-                    st.session_state['filter_visible'] = False
-                    st.rerun()
-            else:
-                if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc", use_container_width=True):
-                    st.session_state['filter_visible'] = True
-                    st.rerun()
+            if st.button("☰", key="filter_toggle_btn", help="Mở bộ lọc", use_container_width=True):
+                st.session_state['filter_popup_open'] = True
+                st.rerun()
         
         with col_tabs:
             tabs = st.tabs(REQUEST_TYPES)
@@ -1300,31 +1283,42 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Layout: Filters on left, Table on right
-    if st.session_state['filter_visible']:
-        col_filter, col_table = st.columns([1, 3])
-    else:
-        col_table = st.columns(1)[0]
-        col_filter = None
-    
-    if col_filter:
-        with col_filter:
+    # Filter popup using sidebar (opens when button is clicked)
+    if st.session_state.get('filter_popup_open', False):
+        with st.sidebar:
             st.subheader("Bộ lọc")
+            
+            # Close button at top
+            if st.button("✕ Đóng", key="close_filter_sidebar", use_container_width=True, type="secondary"):
+                st.session_state['filter_popup_open'] = False
+                st.rerun()
+            
+            st.divider()
             
             # Status filter
             status_options = ["Toàn bộ"] + STATUS_VALUES
+            current_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
+            status_index = 0
+            if current_status in status_options:
+                status_index = status_options.index(current_status)
             selected_status = st.selectbox(
                 "Trạng thái:",
                 status_options,
-                key="filter_status_dash"
+                key="filter_status_dash",
+                index=status_index
             )
             
             # Time filter
             time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+            current_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+            time_index = 0
+            if current_time in time_options:
+                time_index = time_options.index(current_time)
             selected_time = st.selectbox(
                 "Thời gian:",
                 time_options,
-                key="filter_time_dash"
+                key="filter_time_dash",
+                index=time_index
             )
             
             # Date range picker if "Thời gian tự chọn" is selected
@@ -1357,27 +1351,30 @@ def show_dashboard():
             
             # Action buttons
             st.divider()
-            if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+            if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash_popup"):
                 st.session_state['print_labels_dash_clicked'] = True
+                st.session_state['filter_popup_open'] = False
                 st.rerun()
             
-            if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
-                # Export functionality
+            if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash_popup"):
                 csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label="📥 Tải CSV",
                     data=csv,
                     file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="download_csv_popup"
                 )
-    else:
-        # Default values when filter is hidden
-        selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-        selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
-        display_limit = st.session_state.get('display_limit_dash', 100)
-        date_range = None
-        # Note: Filter toggle button is now in the tabs row above, so no need to show it here
+    
+    # Get filter values from session state (with defaults)
+    selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
+    selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+    display_limit = st.session_state.get('display_limit_dash', 100)
+    date_range = st.session_state.get('dash_date_range_custom', None)
+    
+    # Table column (full width now)
+    col_table = st.columns(1)[0]
     
     # Apply status filter
     if selected_status != "Toàn bộ":
