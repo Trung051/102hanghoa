@@ -1237,8 +1237,10 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Sidebar filters (left side)
-    with st.sidebar:
+    # Layout: Filters on left, Table on right
+    col_filter, col_table = st.columns([1, 3])
+    
+    with col_filter:
         st.subheader("Bộ lọc")
         
         # Status filter
@@ -1337,6 +1339,41 @@ def show_dashboard():
         except:
             pass
     
+    # Apply status filter
+    if selected_status != "Toàn bộ":
+        filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
+    
+    # Apply time filter
+    if selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
+        try:
+            df_copy = filtered_by_type.copy()
+            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+            today = datetime.now().date()
+            
+            if selected_time == "Hôm nay":
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == today]
+            elif selected_time == "Hôm qua":
+                yesterday = (datetime.now() - pd.Timedelta(days=1)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == yesterday]
+            elif selected_time == "1 tuần":
+                week_ago = (datetime.now() - pd.Timedelta(days=7)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= week_ago]
+            elif selected_time == "1 tháng":
+                month_ago = (datetime.now() - pd.Timedelta(days=30)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= month_ago]
+        except:
+            pass
+    elif selected_time == "Thời gian tự chọn" and date_range and len(date_range) == 2 and 'sent_time' in filtered_by_type.columns:
+        try:
+            df_copy = filtered_by_type.copy()
+            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+            filtered_by_type = df_copy[
+                (df_copy['sent_time'].dt.date >= date_range[0]) &
+                (df_copy['sent_time'].dt.date <= date_range[1])
+            ]
+        except:
+            pass
+    
     # Limit display
     filtered_by_type = filtered_by_type.head(display_limit)
     
@@ -1345,12 +1382,13 @@ def show_dashboard():
         st.session_state['selected_shipments_for_print'] = []
     
     # Main data table - display in the active tab
-    with tabs[active_tab_idx]:
-        if filtered_by_type.empty:
-            st.info(f"Không có phiếu nào cho loại yêu cầu '{selected_request_type}' với bộ lọc đã chọn.")
-        else:
-            # Prepare data for display
-            display_data = []
+    with col_table:
+        with tabs[active_tab_idx]:
+            if filtered_by_type.empty:
+                st.info(f"Không có phiếu nào cho loại yêu cầu '{selected_request_type}' với bộ lọc đã chọn.")
+            else:
+                # Prepare data for display
+                display_data = []
             for idx, row in filtered_by_type.iterrows():
                 # Format dates
                 sent_date = ""
