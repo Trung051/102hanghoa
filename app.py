@@ -1368,29 +1368,23 @@ def show_dashboard():
     if 'active_request_type_tab' not in st.session_state:
         st.session_state['active_request_type_tab'] = 0
     
-    # Use tabs to filter by request type
-    selected_request_type = REQUEST_TYPES[st.session_state.get('active_request_type_tab', 0)]
+    # Get the currently active tab index - stable approach
+    # Initialize if not set
+    if 'active_request_type_tab' not in st.session_state:
+        st.session_state['active_request_type_tab'] = 0
     
-    # Update selected request type based on tab clicks (workaround)
-    for idx, tab in enumerate(tabs):
-        with tab:
-            if idx != st.session_state.get('active_request_type_tab', 0):
-                st.session_state['active_request_type_tab'] = idx
-                selected_request_type = REQUEST_TYPES[idx]
-                break
-    
-    # Get the currently active tab index
     active_tab_idx = st.session_state.get('active_request_type_tab', 0)
+    
+    # Filter by request type FIRST - before tab detection to ensure data is always available
     selected_request_type = REQUEST_TYPES[active_tab_idx]
     
-    # Filter by request type
     if 'request_type' in df.columns:
         filtered_by_type = df[df['request_type'] == selected_request_type].copy()
     else:
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Sort by sent_time DESC (newest first)
+    # Sort by sent_time DESC (newest first) - always sort to ensure consistency
     if 'sent_time' in filtered_by_type.columns:
         try:
             filtered_by_type['sent_time'] = pd.to_datetime(filtered_by_type['sent_time'], errors='coerce')
@@ -1398,33 +1392,56 @@ def show_dashboard():
         except:
             pass
     
+    # Update tab index only when user clicks a different tab (not on checkbox click)
+    # This logic runs after data is prepared, so it won't affect data display
+    for idx, tab in enumerate(tabs):
+        with tab:
+            # Only update if this is a different tab
+            if idx != active_tab_idx:
+                st.session_state['active_request_type_tab'] = idx
+                # Re-filter data for new tab
+                new_request_type = REQUEST_TYPES[idx]
+                if 'request_type' in df.columns:
+                    filtered_by_type = df[df['request_type'] == new_request_type].copy()
+                else:
+                    filtered_by_type = df.copy()
+                # Re-sort
+                if 'sent_time' in filtered_by_type.columns:
+                    try:
+                        filtered_by_type['sent_time'] = pd.to_datetime(filtered_by_type['sent_time'], errors='coerce')
+                        filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
+                    except:
+                        pass
+                active_tab_idx = idx
+                break
+    
     # Initialize selected shipments for printing
     if 'selected_shipments_for_print' not in st.session_state:
         st.session_state['selected_shipments_for_print'] = []
     
     # Main data table - display in the active tab
     with tabs[active_tab_idx]:
-            if filtered_by_type.empty:
-                st.markdown(f"""
-                <div style="
-                    padding: 2rem;
-                    text-align: center;
-                    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-                    border-radius: 0.75rem;
-                    border: 1px solid #bae6fd;
-                    margin: 1rem 0;
+        if filtered_by_type.empty:
+            st.markdown(f"""
+            <div style="
+                padding: 2rem;
+                text-align: center;
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                border-radius: 0.75rem;
+                border: 1px solid #bae6fd;
+                margin: 1rem 0;
+            ">
+                <p style="
+                    font-size: 1.125rem;
+                    color: #0369a1;
+                    margin: 0;
+                    font-weight: 500;
                 ">
-                    <p style="
-                        font-size: 1.125rem;
-                        color: #0369a1;
-                        margin: 0;
-                        font-weight: 500;
-                    ">
-                        📭 Không có phiếu nào cho loại yêu cầu '<strong>{selected_request_type}</strong>' với bộ lọc đã chọn.
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
+                    📭 Không có phiếu nào cho loại yêu cầu '<strong>{selected_request_type}</strong>'.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
                 # Prepare data for display
                 display_data = []
                 for idx, row in filtered_by_type.iterrows():
@@ -1496,10 +1513,13 @@ def show_dashboard():
                         col_check, col_qr, col_name, col_imei, col_received, col_return, col_status, col_detail = st.columns([0.5, 1.5, 2.5, 1.5, 1, 1, 2, 0.8])
                         
                         with col_check:
+                            # Simple checkbox - update state without immediate rerun
+                            # Streamlit will automatically rerun when checkbox changes, but we update state first
                             new_checkbox = st.checkbox("", value=checkbox_checked, key=f"cb_{active_tab_idx}_{row_id}")
-                            if new_checkbox != checkbox_checked:
-                                st.session_state[checkbox_state_key][row_id] = new_checkbox
-                                st.rerun()
+                            # Update state - this happens after Streamlit processes the checkbox change
+                            # The key is to not call st.rerun() manually, let Streamlit handle it
+                            if f"cb_{active_tab_idx}_{row_id}" in st.session_state:
+                                st.session_state[checkbox_state_key][row_id] = st.session_state[f"cb_{active_tab_idx}_{row_id}"]
                         
                         with col_qr:
                             st.write(row['Mã Yêu Cầu'])
