@@ -1244,12 +1244,12 @@ def show_dashboard():
     }
     
     @keyframes slideInLeft {
-        from {
-            opacity: 0;
+            from {
+                opacity: 0;
             transform: translateX(-20px);
-        }
-        to {
-            opacity: 1;
+            }
+            to {
+                opacity: 1;
             transform: translateX(0);
         }
     }
@@ -1320,15 +1320,24 @@ def show_dashboard():
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     
-    /* Primary button */
+    /* Primary button - white background like sidebar */
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        border: none;
+        background: #ffffff;
+        color: #111827;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     
     .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-        box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.3);
+        border-color: #3b82f6;
+        box-shadow: 0 4px 10px rgba(59,130,246,0.16);
+        background: #ffffff;
+    }
+    
+    .stButton > button[kind="primary"]:active,
+    .stButton > button[kind="primary"]:focus {
+        background: #ffffff;
+        border-color: #3b82f6;
     }
     
     /* Secondary button */
@@ -1544,9 +1553,9 @@ def show_dashboard():
                     key="display_limit_dash"
                 )
                 
-                # Action buttons with spacing
+                # Action buttons with spacing - white background like sidebar
                 st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
-                if st.button("🖨️ In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+                if st.button("🖨️ In Tem", use_container_width=True, key="print_labels_dash"):
                     st.session_state['print_labels_dash_clicked'] = True
                     st.rerun()
                 
@@ -2098,7 +2107,7 @@ def show_manage_shipments():
     with st.expander("🔎 Bộ lọc (trạng thái / NCC / QR)", expanded=False):
         col1, col2, col3 = st.columns([1, 1, 1])
     
-        with col1:
+    with col1:
             filter_status = st.multiselect(
                 "Trạng thái:",
                 STATUS_VALUES,
@@ -2106,7 +2115,7 @@ def show_manage_shipments():
                 key="manage_filter_status"
             )
         
-        with col2:
+    with col2:
             suppliers_list = df['supplier'].unique().tolist()
             filter_supplier = st.multiselect(
                 "NCC:",
@@ -2115,7 +2124,7 @@ def show_manage_shipments():
                 key="manage_filter_supplier"
             )
         
-        with col3:
+    with col3:
             search_qr = st.text_input("Mã QR:", key="search_qr")
     
     # Apply filters
@@ -2173,7 +2182,7 @@ def show_manage_shipments():
             # Image upload status
             if not row.get('image_url'):
                 st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
-            else:
+    else:
                 # Hỗ trợ nhiều ảnh (phân tách bằng ';')
                 urls = str(row.get('image_url') or '').split(';')
                 urls = [u for u in urls if u.strip()]
@@ -2306,7 +2315,7 @@ def show_manage_shipments():
                             edit_key = f'edit_shipment_{row["id"]}'
                             if edit_key in st.session_state:
                                 del st.session_state[edit_key]
-                            st.rerun()
+            st.rerun()
                         else:
                             st.error(f"❌ {result['error']}")
                 
@@ -2519,7 +2528,7 @@ def show_user_management():
                 st.error("❌ Vui lòng nhập mật khẩu")
             elif password != confirm:
                 st.error("❌ Mật khẩu nhập lại không khớp")
-        else:
+            else:
                 assigned_store = None if store_choice == "Không gán" else store_choice
                 result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, assigned_store)
                 if result['success']:
@@ -2581,7 +2590,7 @@ def show_user_management():
     user_info = get_user(selected_user)
     if not user_info:
         st.error("Không lấy được thông tin tài khoản.")
-        return
+            return
         
     with st.expander(f"✏️ Chỉnh sửa tài khoản: **{selected_user}**", expanded=False):
         with st.form("edit_user_form"):
@@ -2616,7 +2625,7 @@ def show_user_management():
                 )
                 if res['success']:
                     st.success("✅ Đã cập nhật tài khoản")
-                    st.rerun()
+                st.rerun()
                 else:
                     st.error(f"❌ {res['error']}")
 
@@ -2683,7 +2692,7 @@ def show_database_management():
                     for key in list(st.session_state.keys()):
                         if key != 'username':  # Giữ lại thông tin đăng nhập
                             del st.session_state[key]
-                        st.rerun()
+            st.rerun()
                     else:
                         st.error(f"❌ Lỗi khi xóa database: {result['error']}")
     else:
@@ -2740,7 +2749,7 @@ def show_google_sheets_settings():
             df = get_all_shipments()
             if df.empty:
                 st.warning("⚠️ Không có dữ liệu để push")
-            else:
+        else:
                 append_mode = (push_mode == "Thêm mới (Append)")
                 result = push_shipments_to_sheets(df, append_mode=append_mode)
                 if result['success']:
@@ -2774,8 +2783,8 @@ def show_transfer_slip_scan(current_user):
             result = create_transfer_slip(current_user)
             if result['success']:
                 st.success(f"Đã tạo phiếu chuyển: {result['transfer_code']}")
-                st.rerun()
-            else:
+                    st.rerun()
+                else:
                 st.error(f"Lỗi: {result['error']}")
         return
     
@@ -2874,7 +2883,7 @@ def show_transfer_slip_scan(current_user):
                     )
                     if result['success']:
                         success_count += 1
-                    else:
+        else:
                         error_count += 1
                 
                 if success_count > 0:
@@ -2882,7 +2891,7 @@ def show_transfer_slip_scan(current_user):
                     if error_count > 0:
                         st.warning(f"⚠️ {error_count} phiếu cập nhật thất bại")
                     st.rerun()
-                else:
+    else:
                     st.error(f"❌ Không thể cập nhật phiếu nào")
 
     st.divider()
@@ -3069,7 +3078,7 @@ try:
         if 'auto_update_count' not in st.session_state or st.session_state['auto_update_count'] != auto_result['updated_count']:
             st.session_state['auto_update_count'] = auto_result['updated_count']
             st.session_state['show_auto_update_notification'] = True
-except Exception as e:
+        except Exception as e:
     print(f"Error auto-updating status: {e}")
 
 # Add loading animation CSS and optimize performance
