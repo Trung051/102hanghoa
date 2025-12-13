@@ -1913,26 +1913,10 @@ def show_dashboard():
             total_items = len(filtered_df)
             total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 1
             
-            # Hiển thị thông tin phân trang
-            st.caption(f"Hiển thị {start_idx + 1}-{min(end_idx, total_items)} trong tổng số {total_items} phiếu")
-            
             # Nút điều hướng phân trang
             page_key = f"dashboard_page_{request_type}"
             if page_key not in st.session_state:
                 st.session_state[page_key] = 1
-            
-            if total_pages > 1:
-                col_page1, col_page2, col_page3 = st.columns([1, 2, 1])
-                with col_page1:
-                    if st.button("◀ Trước", key=f"prev_page_{request_type}", disabled=(st.session_state[page_key] <= 1)):
-                        st.session_state[page_key] -= 1
-                        st.rerun()
-                with col_page2:
-                    st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Trang {st.session_state[page_key]}/{total_pages}</div>", unsafe_allow_html=True)
-                with col_page3:
-                    if st.button("Sau ▶", key=f"next_page_{request_type}", disabled=(st.session_state[page_key] >= total_pages)):
-                        st.session_state[page_key] += 1
-                        st.rerun()
             
             # Sử dụng page key riêng cho mỗi request type
             current_page = st.session_state[page_key]
@@ -1946,6 +1930,22 @@ def show_dashboard():
             start_idx = (current_page - 1) * items_per_page
             end_idx = start_idx + items_per_page
             page_df = filtered_df.iloc[start_idx:end_idx]
+            
+            # Hiển thị thông tin phân trang
+            st.caption(f"Hiển thị {start_idx + 1}-{min(end_idx, total_items)} trong tổng số {total_items} phiếu")
+            
+            if total_pages > 1:
+                col_page1, col_page2, col_page3 = st.columns([1, 2, 1])
+                with col_page1:
+                    if st.button("◀ Trước", key=f"prev_page_{request_type}", disabled=(st.session_state[page_key] <= 1)):
+                        st.session_state[page_key] -= 1
+                        st.rerun()
+                with col_page2:
+                    st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Trang {st.session_state[page_key]}/{total_pages}</div>", unsafe_allow_html=True)
+                with col_page3:
+                    if st.button("Sau ▶", key=f"next_page_{request_type}", disabled=(st.session_state[page_key] >= total_pages)):
+                        st.session_state[page_key] += 1
+                        st.rerun()
             
             # Hiển thị bảng dữ liệu
             if page_df.empty:
