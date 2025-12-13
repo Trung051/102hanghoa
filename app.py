@@ -2000,9 +2000,12 @@ def show_dashboard():
                         # Nơi tiếp nhận (reception_location hoặc store_name)
                         reception_location = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
                         
+                        # Tạo label cho expander với thông tin cơ bản
+                        expander_label = f"📋 {qr_code} | {time_str} | {reception_location} | {status}"
+                        
                         # Tạo expander cho mỗi phiếu với thông tin cơ bản
                         with st.expander(
-                            f"📋 {qr_code} - {status}",
+                            expander_label,
                             expanded=(st.session_state.get('dashboard_detail_id') == shipment_id)
                         ):
                             # Hiển thị thông tin cơ bản: Mã yêu cầu, Thời gian, Nơi tiếp nhận, Trạng thái
