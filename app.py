@@ -2013,6 +2013,36 @@ def show_dashboard():
                     margin-top: 6px;
                     border: 1px solid #e5e7eb;
                 }
+                .detail-link {
+                    color: #3b82f6;
+                    font-weight: 700;
+                    cursor: pointer;
+                    text-decoration: none;
+                    font-size: 1rem;
+                    transition: color 0.2s;
+                }
+                .detail-link:hover {
+                    color: #2563eb;
+                    text-decoration: underline;
+                }
+                .qr-button {
+                    background: white;
+                    border: 2px solid #3b82f6;
+                    color: #3b82f6;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    text-align: center;
+                    width: 100%;
+                }
+                .qr-button:hover {
+                    background: #3b82f6;
+                    color: white;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(59,130,246,0.3);
+                }
                 </style>
                 """, unsafe_allow_html=True)
                 
@@ -2119,7 +2149,9 @@ def show_dashboard():
                                 <span class="status-badge {row_data['status_class']}">{row_data['status']}</span>
                                 {f'<div class="update-time-box">Cập nhật: {row_data["update_time"]}</div>' if row_data['update_time'] else ''}
                             </td>
-                            <td id="detail-cell-{row_data['row_id']}">>>></td>
+                            <td id="detail-cell-{row_data['row_id']}" style="text-align: center;">
+                                <span class="detail-link" data-shipment-id="{row_data['row_id']}">>>></span>
+                            </td>
                         </tr>
                     """
                 
@@ -2131,16 +2163,25 @@ def show_dashboard():
                 
                 st.markdown(table_html, unsafe_allow_html=True)
                 
-                # Tạo nút chi tiết bằng Streamlit (ẩn, chỉ dùng để trigger)
-                # Hiển thị nút dưới dạng inline với bảng
-                st.write("**Nhấn vào mã QR để xem chi tiết:**")
-                detail_cols = st.columns(min(len(table_rows), 5))
-                for col_idx, row_data in enumerate(table_rows):
-                    with detail_cols[col_idx % len(detail_cols)]:
-                        detail_btn_key = f"detail_btn_{row_data['row_id']}_{request_type}"
-                        if st.button(f">>> {row_data['qr_code']}", key=detail_btn_key, use_container_width=True):
-                            st.session_state['dashboard_detail_id'] = row_data['row_id']
-                            st.rerun()
+                # Tạo nút chi tiết bằng Streamlit với mã QR code
+                st.markdown("**Nhấn vào mã QR để xem chi tiết:**")
+                
+                # Tạo grid layout cho các nút QR code (tối đa 5 cột)
+                num_cols = min(len(table_rows), 5)
+                if num_cols > 0:
+                    detail_cols = st.columns(num_cols)
+                    
+                    for col_idx, row_data in enumerate(table_rows):
+                        with detail_cols[col_idx % num_cols]:
+                            detail_btn_key = f"detail_btn_{row_data['row_id']}_{request_type}"
+                            if st.button(
+                                row_data['qr_code'], 
+                                key=detail_btn_key, 
+                                use_container_width=True,
+                                type="secondary"
+                            ):
+                                st.session_state['dashboard_detail_id'] = row_data['row_id']
+                                st.rerun()
                 
                 # Hiển thị chi tiết nếu có
                 if st.session_state.get('dashboard_detail_id'):
