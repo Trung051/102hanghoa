@@ -81,9 +81,9 @@ from database import (
 from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
 try:
-    from settings import STATUS_VALUES  # type: ignore
+    from settings import STATUS_VALUES, REQUEST_TYPES  # type: ignore
 except ModuleNotFoundError:
-    from config import STATUS_VALUES  # type: ignore
+    from config import STATUS_VALUES, REQUEST_TYPES  # type: ignore
 from google_sheets import push_shipments_to_sheets, test_connection
 from drive_upload import upload_file_to_drive, upload_file_to_transfer_folder, upload_multiple_files_to_drive
 from telegram_notify import send_text, send_photo
@@ -714,8 +714,8 @@ def show_shipment_info(current_user, shipment):
                 if uploaded_images:
                     with st.spinner(f"Đang upload {len(uploaded_images)} ảnh lên Google Drive (song song)..."):
                         # Prepare files data for parallel upload
-                        sanitized_qr = shipment['qr_code'].strip().replace(" ", "_") or "qr_image"
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        sanitized_qr = shipment['qr_code'].strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                        sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
                         files_data = []
                         for idx, f in enumerate(uploaded_images, start=1):
                             file_bytes = f.getvalue()
@@ -726,7 +726,8 @@ def show_shipment_info(current_user, shipment):
                                 ext = orig_name.split(".")[-1]
                             if not ext:
                                 ext = "jpg"
-                            drive_filename = f"{sanitized_qr}_update_{timestamp}_anh{idx}.{ext}"
+                            # Tên file: mã QR + trạng thái + stt
+                            drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
                             files_data.append({
                                 'file_bytes': file_bytes,
                                 'filename': drive_filename,
@@ -928,6 +929,14 @@ def show_create_shipment_form(current_user, qr_code):
             key="supplier_select"
         )
         
+        # Loại yêu cầu (bắt buộc)
+        request_type = st.selectbox(
+            "Loại yêu cầu *:",
+            REQUEST_TYPES,
+            key="request_type_select",
+            help="Chọn loại yêu cầu (bắt buộc)"
+        )
+        
         notes = st.text_area("Ghi chú:", key="notes_input")
         uploaded_images_create = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_create")
         
@@ -941,10 +950,15 @@ def show_create_shipment_form(current_user, qr_code):
                 st.error("❌ Vui lòng nhập Tên thiết bị!")
             elif not capacity.strip():
                 st.error("❌ Vui lòng nhập Lỗi / Tình trạng!")
+            elif not request_type:
+                st.error("❌ Vui lòng chọn Loại yêu cầu!")
             else:
                 image_url = None
                 if uploaded_images_create:
                     urls = []
+                    current_status = 'Đã nhận'  # Default status for new shipments
+                    sanitized_qr = qr_code.strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                    sanitized_status = current_status.replace(" ", "_").replace("/", "_")
                     for idx, f in enumerate(uploaded_images_create, start=1):
                         file_bytes = f.getvalue()
                         mime = f.type or "image/jpeg"
@@ -954,9 +968,8 @@ def show_create_shipment_form(current_user, qr_code):
                             ext = orig_name.split(".")[-1]
                         if not ext:
                             ext = "jpg"
-                        sanitized_qr = qr_code.strip().replace(" ", "_") or "qr_image"
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        drive_filename = f"{sanitized_qr}_create_{timestamp}_anh{idx}.{ext}"
+                        # Tên file: mã QR + trạng thái + stt
+                        drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
                         upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                         if upload_res['success']:
                             urls.append(upload_res['url'])
@@ -966,8 +979,8 @@ def show_create_shipment_form(current_user, qr_code):
                     if urls:
                         image_url = ";".join(urls)
 
-                # Set status mặc định: "Phiếu tạm" cho cửa hàng, "Đang gửi" cho các user khác
-                default_status = 'Phiếu tạm' if store_user else 'Đang gửi'
+                # Set status mặc định: "Đã nhận"
+                default_status = 'Đã nhận'
                 
                 result = save_shipment(
                     qr_code=qr_code.strip(),
@@ -979,7 +992,8 @@ def show_create_shipment_form(current_user, qr_code):
                     notes=notes if notes else None,
                     image_url=image_url,
                     status=default_status,
-                    store_name=store_name
+                    store_name=store_name,
+                    request_type=request_type
                 )
                 
                 if result['success']:
@@ -1175,8 +1189,8 @@ def show_update_shipment_form(current_user, found_shipment):
 
 
 def show_dashboard():
-    """Show simple, clean dashboard with statistics"""
-    st.title("Dashboard Quản Lý")
+    """Show dashboard with request type tabs and filters"""
+    st.title("QUẢN LÝ SỬA CHỮA")
     
     # Get all shipments
     df = get_all_shipments()
@@ -1194,230 +1208,279 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Calculate metrics
-    try:
-        from settings import ACTIVE_STATUSES, COMPLETED_STATUSES  # type: ignore
-    except ModuleNotFoundError:
-        from config import ACTIVE_STATUSES, COMPLETED_STATUSES  # type: ignore
-    total = len(df)
-    active_df = get_active_shipments()
-    active_count = len(active_df)
-    completed_df = df[df['status'].isin(COMPLETED_STATUSES)]
-    completed_count = len(completed_df)
+    # Tabs for request types
+    tabs = st.tabs(REQUEST_TYPES)
     
-    # Simple metrics layout
-    st.markdown("### Thống Kê")
+    # Determine which tab is active by checking session state
+    if 'active_request_type_tab' not in st.session_state:
+        st.session_state['active_request_type_tab'] = 0
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Tổng Phiếu", total)
-    with col2:
-        st.metric("Đang Hoạt Động", active_count, delta=None)
-    with col3:
-        st.metric("Đã Hoàn Thành", completed_count)
+    # Use tabs to filter by request type
+    selected_request_type = REQUEST_TYPES[st.session_state.get('active_request_type_tab', 0)]
     
-    st.divider()
+    # Update selected request type based on tab clicks (workaround)
+    for idx, tab in enumerate(tabs):
+        with tab:
+            if idx != st.session_state.get('active_request_type_tab', 0):
+                st.session_state['active_request_type_tab'] = idx
+                selected_request_type = REQUEST_TYPES[idx]
+                break
     
-    # Quick Actions
-    st.markdown("### Thao Tác Nhanh")
-    col_qa1, col_qa2, col_qa3 = st.columns(3)
-    with col_qa1:
-        if st.button("Quét QR Code", type="primary", use_container_width=True, key="qa_scan_dash"):
-            st.session_state['nav'] = "Quét QR"
-            st.rerun()
-    with col_qa2:
-        if st.button("In Tem QR", use_container_width=True, key="qa_print_dash"):
-            st.session_state['nav'] = "Quản Lý Phiếu"
-            st.rerun()
-    with col_qa3:
-        if st.button("Xem Tất Cả", use_container_width=True, key="qa_view_all"):
-            st.session_state['nav'] = "Quản Lý Phiếu"
-            st.rerun()
+    # Get the currently active tab index
+    active_tab_idx = st.session_state.get('active_request_type_tab', 0)
+    selected_request_type = REQUEST_TYPES[active_tab_idx]
     
-    st.divider()
+    # Filter by request type
+    if 'request_type' in df.columns:
+        filtered_by_type = df[df['request_type'] == selected_request_type].copy()
+    else:
+        # Fallback if request_type column doesn't exist yet
+        filtered_by_type = df.copy()
     
-    # Phiếu đang hoạt động (chưa hoàn thành)
-    st.markdown("### 🔴 Phiếu Đang Hoạt Động")
-    
-    if not active_df.empty:
-        # Format last_updated để hiển thị
-        if 'last_updated' in active_df.columns:
-            active_df_display = active_df.copy()
-            active_df_display['last_updated'] = pd.to_datetime(active_df_display['last_updated'], errors='coerce')
-            active_df_display['last_updated'] = active_df_display['last_updated'].dt.strftime('%d/%m/%Y %H:%M')
-        else:
-            active_df_display = active_df.copy()
+    # Sidebar filters (left side)
+    with st.sidebar:
+        st.subheader("Bộ lọc")
         
-        # Tạo cột hiển thị với icon online
-        display_data = []
-        for idx, row in active_df_display.iterrows():
-            status_icon = "🟢"  # Icon online
-            last_update = row.get('last_updated', 'N/A')
-            store_name = row.get('store_name', '')
-            store_info = f" ({store_name})" if store_name else ""
-            
-            display_data.append({
-                '🔴': status_icon,
-                'Mã QR': row.get('qr_code', ''),
-                'Tên thiết bị': row.get('device_name', ''),
-                'Trạng thái': row.get('status', ''),
-                'Cửa hàng': store_name if store_name else '-',
-                'Cập nhật lúc': last_update
-            })
-        
-        display_df = pd.DataFrame(display_data)
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
+        # Status filter
+        status_options = ["Toàn bộ"] + STATUS_VALUES
+        selected_status = st.selectbox(
+            "Trạng thái:",
+            status_options,
+            key="filter_status_dash"
         )
         
-        # Cho phép click vào từng phiếu để xem chi tiết
-        st.markdown("💡 **Nhấp vào một phiếu để xem chi tiết và cập nhật trạng thái**")
-    else:
-        st.info("Không có phiếu nào đang hoạt động.")
-    
-    st.divider()
-    
-    # Recent shipments (chỉ phiếu đã hoàn thành)
-    st.markdown("### Phiếu Gần Đây (Đã Hoàn Thành)")
-    
-    if not completed_df.empty:
-        try:
-            if 'sent_time' in completed_df.columns:
-                completed_df_copy = completed_df.copy()
-                completed_df_copy['sent_time'] = pd.to_datetime(completed_df_copy['sent_time'], errors='coerce')
-                recent_df = completed_df_copy.sort_values('sent_time', ascending=False, na_position='last').head(10)
-                recent_df = completed_df.loc[recent_df.index]
-            else:
-                recent_df = completed_df.head(10)
-        except:
-            recent_df = completed_df.head(10)
+        # Time filter
+        time_options = ["Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+        selected_time = st.selectbox(
+            "Thời gian:",
+            time_options,
+            key="filter_time_dash"
+        )
         
-        if not recent_df.empty:
-            display_cols = ['qr_code', 'device_name', 'status', 'supplier']
-            if 'store_name' in recent_df.columns:
-                display_cols.insert(-1, 'store_name')
-            available_cols = [col for col in display_cols if col in recent_df.columns]
+        # Date range picker if "Thời gian tự chọn" is selected
+        date_range = None
+        if selected_time == "Thời gian tự chọn":
+            if 'sent_time' in filtered_by_type.columns:
+                try:
+                    df_copy = filtered_by_type.copy()
+                    df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                    min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                    max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                    
+                    date_range = st.date_input(
+                        "Khoảng thời gian:",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                        key="dash_date_range_custom"
+                    )
+                except:
+                    pass
+        
+        # Display setting
+        display_limit = st.selectbox(
+            "Hiển thị:",
+            [50, 100, 200, 500, 1000],
+            index=1,
+            key="display_limit_dash"
+        )
+        
+        # Action buttons
+        st.divider()
+        if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+            st.session_state['print_labels_dash_clicked'] = True
+            st.rerun()
+        
+        if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
+            # Export functionality
+            csv = filtered_by_type.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Tải CSV",
+                data=csv,
+                file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    # Apply status filter
+    if selected_status != "Toàn bộ":
+        filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
+    
+    # Apply time filter
+    if selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
+        try:
+            df_copy = filtered_by_type.copy()
+            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+            today = datetime.now().date()
+            
+            if selected_time == "Hôm nay":
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == today]
+            elif selected_time == "Hôm qua":
+                yesterday = (datetime.now() - pd.Timedelta(days=1)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == yesterday]
+            elif selected_time == "1 tuần":
+                week_ago = (datetime.now() - pd.Timedelta(days=7)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= week_ago]
+            elif selected_time == "1 tháng":
+                month_ago = (datetime.now() - pd.Timedelta(days=30)).date()
+                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= month_ago]
+        except:
+            pass
+    elif selected_time == "Thời gian tự chọn" and date_range and len(date_range) == 2 and 'sent_time' in filtered_by_type.columns:
+        try:
+            df_copy = filtered_by_type.copy()
+            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+            filtered_by_type = df_copy[
+                (df_copy['sent_time'].dt.date >= date_range[0]) &
+                (df_copy['sent_time'].dt.date <= date_range[1])
+            ]
+        except:
+            pass
+    
+    # Limit display
+    filtered_by_type = filtered_by_type.head(display_limit)
+    
+    # Initialize selected shipments for printing
+    if 'selected_shipments_for_print' not in st.session_state:
+        st.session_state['selected_shipments_for_print'] = []
+    
+    # Main data table - display in the active tab
+    with tabs[active_tab_idx]:
+        if filtered_by_type.empty:
+            st.info(f"Không có phiếu nào cho loại yêu cầu '{selected_request_type}' với bộ lọc đã chọn.")
+        else:
+            # Prepare data for display
+            display_data = []
+            for idx, row in filtered_by_type.iterrows():
+                # Format dates
+                sent_date = ""
+                if 'sent_time' in row and pd.notna(row.get('sent_time')):
+                    try:
+                        sent_date = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y')
+                    except:
+                        pass
+                
+                completed_date = ""
+                if 'completed_time' in row and pd.notna(row.get('completed_time')):
+                    try:
+                        completed_date = pd.to_datetime(row['completed_time']).strftime('%d/%m/%Y')
+                    except:
+                        pass
+                
+                display_data.append({
+                    'checkbox': False,  # Will be handled separately
+                    'Mã Yêu Cầu': row.get('qr_code', ''),
+                    'Tên Hàng': row.get('device_name', ''),
+                    'Imei': row.get('imei', ''),
+                    'Ngày Nhận': sent_date,
+                    'Ngày Trả': completed_date,
+                    'Trạng Thái': row.get('status', ''),
+                    'Chi Tiết': row.get('id', '')  # Store ID for detail popup
+                })
+            
+            display_df = pd.DataFrame(display_data)
+            
+            # Create checkboxes for each row
+            selected_ids = []
+            for idx, row in display_df.iterrows():
+                col_chk, col_data = st.columns([0.05, 0.95])
+                with col_chk:
+                    shipment_id = row['Chi Tiết']
+                    checkbox_key = f"checkbox_{shipment_id}_{active_tab_idx}"
+                    if st.checkbox("", key=checkbox_key, label_visibility="collapsed"):
+                        if shipment_id not in selected_ids:
+                            selected_ids.append(shipment_id)
+                
+                with col_data:
+                    # Create clickable row
+                    detail_key = f"detail_btn_{shipment_id}_{active_tab_idx}"
+                    if st.button(f"📋 {row['Mã Yêu Cầu']} | {row['Tên Hàng']} | {row['Trạng Thái']}", key=detail_key, use_container_width=True):
+                        st.session_state[f'show_detail_{shipment_id}'] = True
+                    
+                    # Show detail if clicked
+                    if st.session_state.get(f'show_detail_{shipment_id}', False):
+                        show_shipment_detail_popup(shipment_id)
+                        if st.button("❌ Đóng", key=f"close_detail_{shipment_id}"):
+                            st.session_state[f'show_detail_{shipment_id}'] = False
+                            st.rerun()
+            
+            # Display summary table
+            display_cols = ['Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái']
             st.dataframe(
-                recent_df[available_cols],
+                display_df[display_cols],
                 use_container_width=True,
                 hide_index=True,
-                height=300
+                height=600
             )
-    else:
-        st.info("Chưa có phiếu nào đã hoàn thành.")
+            
+            # Handle print labels button
+            if st.session_state.get('print_labels_dash_clicked', False):
+                if selected_ids:
+                    # Generate labels for selected shipments
+                    qr_codes = []
+                    for sid in selected_ids:
+                        if sid in filtered_by_type['id'].values:
+                            qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
+                    if qr_codes:
+                        st.session_state['nav'] = "Quản Lý Phiếu"
+                        st.session_state['selected_qr_codes'] = qr_codes
+                        st.session_state['print_labels_dash_clicked'] = False
+                        st.rerun()
+                else:
+                    st.warning("Vui lòng chọn ít nhất một phiếu để in tem")
+                    st.session_state['print_labels_dash_clicked'] = False
 
-    # Lộ trình & lịch sử thay đổi
-    st.divider()
-    st.markdown("### Lộ trình & lịch sử trạng thái")
-    df_all = get_all_shipments()
-    if not df_all.empty:
-        selected_qr = st.selectbox("Chọn mã QR để xem lộ trình", df_all['qr_code'].tolist(), index=0)
-        shipment_row = df_all[df_all['qr_code'] == selected_qr].iloc[0].to_dict()
-        st.write(f"**Trạng thái hiện tại:** {shipment_row.get('status','')}")
-        st.write(f"**Cập nhật gần nhất:** {shipment_row.get('last_updated','')}")
-        # Audit log filtered
+
+def show_shipment_detail_popup(shipment_id):
+    """Show shipment detail popup with history"""
+    shipment = get_shipment_by_id(shipment_id)
+    if not shipment:
+        st.error("Không tìm thấy phiếu")
+        return
+    
+    with st.expander(f"📋 Chi tiết phiếu: {shipment.get('qr_code', '')}", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**Mã Yêu Cầu:** {shipment.get('qr_code', '')}")
+            st.write(f"**Tên Hàng:** {shipment.get('device_name', '')}")
+            st.write(f"**IMEI:** {shipment.get('imei', '')}")
+            st.write(f"**Lỗi/Tình trạng:** {shipment.get('capacity', '')}")
+            st.write(f"**Nhà cung cấp:** {shipment.get('supplier', '')}")
+            st.write(f"**Loại yêu cầu:** {shipment.get('request_type', '')}")
+        
+        with col2:
+            st.write(f"**Trạng thái:** {shipment.get('status', '')}")
+            st.write(f"**Ngày nhận:** {pd.to_datetime(shipment.get('sent_time', '')).strftime('%d/%m/%Y') if shipment.get('sent_time') else ''}")
+            st.write(f"**Ngày trả:** {pd.to_datetime(shipment.get('completed_time', '')).strftime('%d/%m/%Y') if shipment.get('completed_time') else ''}")
+            st.write(f"**Cửa hàng:** {shipment.get('store_name', '') or '-'}")
+            st.write(f"**Ghi chú:** {shipment.get('notes', '') or '-'}")
+        
+        # Show images if available
+        if shipment.get('image_url'):
+            st.subheader("Ảnh")
+            image_urls = shipment['image_url'].split(';')
+            for img_url in image_urls:
+                if img_url.strip():
+                    try:
+                        st.image(img_url.strip(), width=300)
+                    except:
+                        st.write(f"Link ảnh: {img_url.strip()}")
+        
+        # Show audit log
+        st.divider()
+        st.subheader("Lịch sử thay đổi")
         audit_df = get_audit_log()
         if not audit_df.empty:
-            audit_df = audit_df[audit_df['shipment_id'] == shipment_row.get('id')]
+            audit_df = audit_df[audit_df['shipment_id'] == shipment_id]
             if not audit_df.empty:
-                audit_df = audit_df[['timestamp','action','new_value','changed_by']]
-                st.dataframe(audit_df.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True, height=260)
+                audit_df_display = audit_df[['timestamp', 'action', 'old_value', 'new_value', 'changed_by']].copy()
+                audit_df_display = audit_df_display.sort_values('timestamp', ascending=False)
+                st.dataframe(audit_df_display, use_container_width=True, hide_index=True)
             else:
-                st.info("Chưa có lịch sử trạng thái cho phiếu này.")
+                st.info("Chưa có lịch sử thay đổi cho phiếu này.")
         else:
-            st.info("Chưa có lịch sử trạng thái.")
-    
-    # Filters and full list (collapsed)
-    with st.expander("Lọc Dữ Liệu & Danh Sách Đầy Đủ", expanded=False):
-        col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        filter_status = st.multiselect(
-            "Trạng thái:",
-            STATUS_VALUES,
-            default=STATUS_VALUES,
-            key="dash_filter_status"
-        )
-        
-    with col2:
-            suppliers_list = df['supplier'].unique().tolist()
-            filter_supplier = st.multiselect(
-                "Nhà cung cấp:",
-                suppliers_list,
-                default=suppliers_list,
-                key="dash_filter_supplier"
-            )
-        
-    with col3:
-        date_range = None
-        if 'sent_time' in df.columns:
-            try:
-                df_copy = df.copy()
-                df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-                min_date = df_copy['sent_time'].min().date()
-                max_date = df_copy['sent_time'].max().date()
-                
-                date_range = st.date_input(
-                    "Khoảng thời gian:",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date,
-                    key="dash_date_range"
-                )
-            except:
-                date_range = None
-    
-    # Apply filters
-    filtered_df = df[
-        (df['status'].isin(filter_status)) &
-        (df['supplier'].isin(filter_supplier))
-    ]
-    
-    # Apply date filter if available
-    if date_range and len(date_range) == 2 and 'sent_time' in filtered_df.columns:
-            try:
-                filtered_df_copy = filtered_df.copy()
-                filtered_df_copy['sent_time'] = pd.to_datetime(filtered_df_copy['sent_time'], errors='coerce')
-                filtered_df = filtered_df_copy[
-                    (filtered_df_copy['sent_time'].dt.date >= date_range[0]) &
-                    (filtered_df_copy['sent_time'].dt.date <= date_range[1])
-                ]
-                # Keep original columns
-                filtered_df = df.loc[filtered_df.index]
-            except:
-                pass
-    
-    st.dataframe(
-        filtered_df,
-        use_container_width=True,
-        height=400,
-        hide_index=True
-    )
-    
-    # Export buttons
-    col_exp1, col_exp2 = st.columns(2)
-    with col_exp1:
-        csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="Tải Excel (CSV)",
-            data=csv,
-            file_name=f"shipments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    
-    with col_exp2:
-            if st.button("Push lên Google Sheets", type="primary", key="push_to_sheets_dashboard", use_container_width=True):
-                with st.spinner("Đang push dữ liệu lên Google Sheets..."):
-                    result = push_shipments_to_sheets(filtered_df, append_mode=True)
-                    if result['success']:
-                        st.success(f"✅ {result['message']}")
-                        st.balloons()
-                    else:
-                        st.error(f"❌ {result['message']}")
+            st.info("Chưa có lịch sử thay đổi.")
 
 
 def show_audit_log():
@@ -1491,14 +1554,27 @@ def show_manage_shipments():
                 if store_input.strip():
                     store_name = store_input.strip()
             
+            # Loại yêu cầu (bắt buộc)
+            request_type_manual = st.selectbox(
+                "Loại yêu cầu *:",
+                REQUEST_TYPES,
+                key="request_type_manual",
+                help="Chọn loại yêu cầu (bắt buộc)"
+            )
+            
             notes = st.text_area("Ghi chú")
             if st.form_submit_button("💾 Lưu phiếu mới", type="primary"):
                 if not qr or not imei or not device_name or not capacity:
                     st.error("Vui lòng nhập đủ Mã QR, IMEI, Tên thiết bị, Lỗi/Tình trạng")
+                elif not request_type_manual:
+                    st.error("Vui lòng chọn Loại yêu cầu!")
                 else:
                     image_url = None
                     if uploaded_image_manual:
                         urls = []
+                        current_status = 'Đã nhận'  # Default status for new shipments
+                        sanitized_qr = qr.strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                        sanitized_status = current_status.replace(" ", "_").replace("/", "_")
                         for idx, f in enumerate(uploaded_image_manual, start=1):
                             file_bytes = f.getvalue()
                             mime = f.type or "image/jpeg"
@@ -1508,9 +1584,8 @@ def show_manage_shipments():
                                 ext = orig_name.split(".")[-1]
                             if not ext:
                                 ext = "jpg"
-                            sanitized_qr = qr.strip().replace(" ", "_") or "qr_image"
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            drive_filename = f"{sanitized_qr}_manual_{timestamp}_anh{idx}.{ext}"
+                            # Tên file: mã QR + trạng thái + stt
+                            drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
                             upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                             if upload_res['success']:
                                 urls.append(upload_res['url'])
@@ -1521,12 +1596,12 @@ def show_manage_shipments():
                         if urls:
                             image_url = ";".join(urls)
 
-                    # Tài khoản cửa hàng: mặc định Chuyển kho, khóa NCC
-                    default_status = 'Chuyển kho' if store_user else 'Đang gửi'
+                    # Tài khoản cửa hàng: mặc định Đã nhận
+                    default_status = 'Đã nhận'
                     res = save_shipment(
                         qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
                         supplier if not store_user else 'Cửa hàng', current_user, notes if notes else None,
-                        status=default_status, store_name=store_name, image_url=image_url
+                        status=default_status, store_name=store_name, image_url=image_url, request_type=request_type_manual
                     )
                     if res['success']:
                         st.success(f"Đã tạo phiếu #{res['id']}")
@@ -1540,6 +1615,13 @@ def show_manage_shipments():
         suppliers_df = get_suppliers()
         supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
         bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
+        # Loại yêu cầu (bắt buộc)
+        bulk_request_type = st.selectbox(
+            "Loại yêu cầu *:",
+            REQUEST_TYPES,
+            key="bulk_request_type",
+            help="Chọn loại yêu cầu (bắt buộc)"
+        )
         uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx", "xls"], key="bulk_excel")
         if uploaded_file is not None:
             if st.button("Xử lý file", type="primary", key="bulk_process"):
@@ -1584,8 +1666,9 @@ def show_manage_shipments():
                                 supplier=bulk_supplier if bulk_supplier != "Chưa chọn" else "Chưa chọn",
                                 created_by=current_user,
                                 notes=None,
-                                status="Phiếu tạm",
-                                store_name=store_name
+                                status="Đã nhận",
+                                store_name=store_name,
+                                request_type=bulk_request_type
                             )
                             if res['success']:
                                 success += 1
@@ -1821,9 +1904,10 @@ def show_manage_shipments():
                                     ext = orig_name.split(".")[-1]
                                 if not ext:
                                     ext = "jpg"
-                                sanitized_qr = edit_qr_code.strip().replace(" ", "_") or "qr_image"
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                drive_filename = f"{sanitized_qr}_edit_{timestamp}_anh{idx}.{ext}"
+                                    sanitized_qr = edit_qr_code.strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                    sanitized_status = edit_status.replace(" ", "_").replace("/", "_") if edit_status else "unknown"
+                                    # Tên file: mã QR + trạng thái + stt
+                                    drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
                                 upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
                                 if upload_res['success']:
                                     urls.append(upload_res['url'])
@@ -1849,9 +1933,9 @@ def show_manage_shipments():
                         
                         if result['success']:
                             st.success("✅ Đã cập nhật thành công!")
-                            # Notify Telegram if status is Đã nhận hoặc Hoàn thành chuyển cửa hàng
+                            # Notify Telegram if status is one of: Đã nhận, Chuyển kho, Gửi NCC sửa, Chuyển cửa hàng
                             updated = get_shipment_by_qr_code(edit_qr_code.strip())
-                            if updated and updated.get('status') in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
+                            if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
                                 res = notify_shipment_if_received(
                                     updated['id'],
                                     force=not row.get('telegram_message_id'),
@@ -2460,16 +2544,32 @@ def show_transfer_slip_scan(current_user):
                 
                 if uploaded_image is not None:
                     with st.spinner("Đang upload ảnh..."):
-                        file_bytes = uploaded_image.getvalue()
-                        mime = uploaded_image.type or "image/jpeg"
-                        ext = uploaded_image.name.split(".")[-1] if "." in uploaded_image.name else "jpg"
-                        drive_filename = f"{transfer_code}.{ext}"
-                        upload_res = upload_file_to_transfer_folder(file_bytes, drive_filename, mime)
-                        if upload_res['success']:
-                            image_url = upload_res['url']
+                        # Handle multiple images
+                        if isinstance(uploaded_image, list):
+                            image_files = uploaded_image
                         else:
-                            st.error(f"Upload ảnh thất bại: {upload_res['error']}")
-                            st.stop()
+                            image_files = [uploaded_image]
+                        
+                        urls = []
+                        for idx, img in enumerate(image_files, start=1):
+                            file_bytes = img.getvalue()
+                            mime = img.type or "image/jpeg"
+                            ext = img.name.split(".")[-1] if "." in img.name else "jpg"
+                            # Tên file: tên phiếu chuyển + trạng thái + stt
+                            sanitized_code = transfer_code.replace(" ", "_").replace("/", "_")
+                            sanitized_status = new_status.replace(" ", "_").replace("/", "_")
+                            drive_filename = f"{sanitized_code}_{sanitized_status}_{idx}.{ext}"
+                            upload_res = upload_file_to_transfer_folder(file_bytes, drive_filename, mime)
+                            if upload_res['success']:
+                                urls.append(upload_res['url'])
+                            else:
+                                st.error(f"Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                st.stop()
+                        
+                        if urls:
+                            image_url = ";".join(urls)
+                        else:
+                            image_url = None
                 
                 # Update transfer slip
                 update_result = update_transfer_slip(
