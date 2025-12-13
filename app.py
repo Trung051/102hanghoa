@@ -1190,6 +1190,18 @@ def show_update_shipment_form(current_user, found_shipment):
 
 def show_dashboard():
     """Show dashboard with request type tabs and filters"""
+    # Custom CSS to move title to top
+    st.markdown("""
+    <style>
+    .main .block-container {
+        padding-top: 1rem;
+    }
+    h1 {
+        margin-top: 0;
+        padding-top: 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     st.title("QUẢN LÝ SỬA CHỮA")
     
     # Get all shipments
@@ -1237,24 +1249,12 @@ def show_dashboard():
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Initialize filter visibility state
-    if 'filter_visible' not in st.session_state:
-        st.session_state['filter_visible'] = True
-    
     # Layout: Filters on left, Table on right
     if st.session_state['filter_visible']:
         col_filter, col_table = st.columns([1, 3])
     else:
         col_table = st.columns(1)[0]
         col_filter = None
-    
-    # Filter toggle button - place it in the filter column if visible, or standalone if hidden
-    if st.session_state['filter_visible']:
-        if col_filter:
-            with col_filter:
-                if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
-                    st.session_state['filter_visible'] = False
-                    st.rerun()
     
     if col_filter:
         with col_filter:
