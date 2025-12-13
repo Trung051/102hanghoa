@@ -1190,32 +1190,255 @@ def show_update_shipment_form(current_user, found_shipment):
 
 def show_dashboard():
     """Show dashboard with request type tabs and filters"""
-    # Custom CSS to move title to top and style filter button like sidebar toggle
+    # Professional CSS for dashboard with animations
     st.markdown("""
     <style>
+    /* Main container */
     .main .block-container {
-        padding-top: 0.2rem;
-        padding-bottom: 1rem;
+        padding-top: 0.5rem;
+        padding-bottom: 1.5rem;
+        max-width: 100%;
     }
+    
+    /* Title styling */
     h1 {
         margin-top: 0;
         padding-top: 0;
-        margin-bottom: 0.3rem;
+        margin-bottom: 0.5rem;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1f2937;
+        letter-spacing: -0.02em;
     }
+    
+    /* Tabs styling */
     div[data-testid="stTabs"] {
-        margin-bottom: 1rem;
+        margin-bottom: 1.5rem;
     }
-    /* Style filter button like sidebar toggle */
-    button[key="filter_toggle_btn"] {
+    
+    div[data-testid="stTabs"] > div > div > div[role="tablist"] {
+        gap: 0.5rem;
+    }
+    
+    div[data-testid="stTabs"] > div > div > div[role="tablist"] > button {
+        border-radius: 0.5rem;
+        padding: 0.5rem 1rem;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    
+    div[data-testid="stTabs"] > div > div > div[role="tablist"] > button:hover {
+        background-color: #f3f4f6;
+        transform: translateY(-1px);
+    }
+    
+    /* Filter box styling with animation */
+    .filter-box-small {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        animation: slideInLeft 0.3s ease-out;
+    }
+    
+    @keyframes slideInLeft {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .filter-box-small:hover {
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        transform: translateY(-2px);
+    }
+    
+    /* Filter header */
+    .filter-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .filter-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+    }
+    
+    /* Filter buttons styling */
+    button[key="hide_filter_box"], button[key="show_filter_box"] {
         border: none !important;
         background: transparent !important;
         box-shadow: none !important;
-        padding: 0.25rem 0.5rem !important;
-        font-size: 1.2rem !important;
-        color: rgb(49, 51, 63) !important;
+        padding: 0.375rem 0.5rem !important;
+        font-size: 1.25rem !important;
+        color: #6b7280 !important;
+        border-radius: 0.375rem !important;
+        transition: all 0.2s ease !important;
+        cursor: pointer !important;
     }
-    button[key="filter_toggle_btn"]:hover {
-        background-color: rgba(250, 250, 250, 0.8) !important;
+    
+    button[key="hide_filter_box"]:hover, button[key="show_filter_box"]:hover {
+        background-color: #f3f4f6 !important;
+        color: #1f2937 !important;
+        transform: scale(1.1);
+    }
+    
+    /* Selectbox styling */
+    .stSelectbox > div > div {
+        border-radius: 0.5rem;
+        border: 1px solid #d1d5db;
+        transition: all 0.2s ease;
+    }
+    
+    .stSelectbox > div > div:hover {
+        border-color: #9ca3af;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        border-radius: 0.5rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        padding: 0.5rem 1rem;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Primary button */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        border: none;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Secondary button */
+    .stButton > button[kind="secondary"] {
+        background: #f3f4f6;
+        color: #374151;
+        border: 1px solid #d1d5db;
+    }
+    
+    .stButton > button[kind="secondary"]:hover {
+        background: #e5e7eb;
+        border-color: #9ca3af;
+    }
+    
+    /* Data editor styling */
+    div[data-testid="stDataEditor"] {
+        border-radius: 0.75rem;
+        border: 1px solid #e5e7eb;
+        overflow: hidden;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    }
+    
+    div[data-testid="stDataEditor"] > div {
+        background: white;
+    }
+    
+    /* Table header styling */
+    div[data-testid="stDataEditor"] thead th {
+        background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+        font-weight: 600;
+        color: #1f2937;
+        border-bottom: 2px solid #e5e7eb;
+        padding: 0.75rem;
+    }
+    
+    /* Table row styling */
+    div[data-testid="stDataEditor"] tbody tr {
+        transition: background-color 0.2s ease;
+    }
+    
+    div[data-testid="stDataEditor"] tbody tr:hover {
+        background-color: #f9fafb;
+    }
+    
+    div[data-testid="stDataEditor"] tbody tr:nth-child(even) {
+        background-color: #fafafa;
+    }
+    
+    div[data-testid="stDataEditor"] tbody tr:nth-child(even):hover {
+        background-color: #f3f4f6;
+    }
+    
+    /* Table cell styling */
+    div[data-testid="stDataEditor"] td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    
+    /* Checkbox styling */
+    div[data-testid="stDataEditor"] input[type="checkbox"] {
+        width: 1.25rem;
+        height: 1.25rem;
+        cursor: pointer;
+        accent-color: #ef4444;
+    }
+    
+    /* Detail button styling */
+    div[data-testid="stDataEditor"] button {
+        border-radius: 0.375rem;
+        transition: all 0.2s ease;
+    }
+    
+    div[data-testid="stDataEditor"] button:hover {
+        transform: scale(1.05);
+    }
+    
+    /* Info message styling */
+    .stInfo {
+        border-radius: 0.5rem;
+        border-left: 4px solid #3b82f6;
+        background: #eff6ff;
+    }
+    
+    /* Smooth transitions */
+    * {
+        transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    
+    /* Hide filter animation */
+    @keyframes slideOutLeft {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        to {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+    }
+    
+    /* Show filter animation */
+    @keyframes slideInRight {
+        from {
+            opacity: 0;
+            transform: translateX(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1253,29 +1476,19 @@ def show_dashboard():
         
         if col_filter_box:
             with col_filter_box:
-                # Small filter box with border
-                st.markdown("""
-            <style>
-            .filter-box-small {
-                border: 1px solid #e0e0e0;
-                border-radius: 0.5rem;
-                padding: 1rem;
-                background: white;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-            </style>
-            <div class="filter-box-small">
-            """, unsafe_allow_html=True)
+                # Professional filter box with animation
+                st.markdown('<div class="filter-box-small">', unsafe_allow_html=True)
                 
                 # Header with title and hide button
-                col_title, col_hide = st.columns([0.8, 0.2])
+                col_title, col_hide = st.columns([0.85, 0.15])
                 with col_title:
-                    st.markdown("**Bộ lọc**")
+                    st.markdown('<p class="filter-title">🔍 Bộ lọc</p>', unsafe_allow_html=True)
                 with col_hide:
                     if st.button("✕", key="hide_filter_box", help="Ẩn bộ lọc"):
                         st.session_state['filter_box_visible'] = False
                         st.rerun()
-                st.markdown("---")
+                
+                st.markdown("<hr style='margin: 0.75rem 0; border: none; border-top: 1px solid #e5e7eb;'>", unsafe_allow_html=True)
                 
                 # Status filter (compact)
                 status_options = ["Toàn bộ"] + STATUS_VALUES
@@ -1331,25 +1544,29 @@ def show_dashboard():
                     key="display_limit_dash"
                 )
                 
-                # Action buttons (compact)
-                if st.button("In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
+                # Action buttons with spacing
+                st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
+                if st.button("🖨️ In Tem", type="primary", use_container_width=True, key="print_labels_dash"):
                     st.session_state['print_labels_dash_clicked'] = True
                     st.rerun()
                 
-                if st.button("Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
+                st.markdown("<div style='margin-top: 0.5rem;'>", unsafe_allow_html=True)
+                if st.button("📊 Xuất Báo Cáo", use_container_width=True, key="export_report_dash"):
                     # Export will be handled after filtering
                     st.session_state['export_report_clicked'] = True
                     st.rerun()
+                st.markdown("</div></div>", unsafe_allow_html=True)
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         else:
-            # Show button to show filter when hidden - place before tabs
+            # Show button to show filter when hidden - place before tabs with animation
             col_show_btn, col_tabs_full = st.columns([0.05, 0.95])
             with col_show_btn:
-                st.write("")  # Spacing to align with tabs
+                st.markdown("<div style='padding-top: 0.5rem;'>", unsafe_allow_html=True)
                 if st.button("☰", key="show_filter_box", help="Hiện bộ lọc", use_container_width=True):
                     st.session_state['filter_box_visible'] = True
                     st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
             col_tabs = col_tabs_full
         
         with col_tabs:
@@ -1451,7 +1668,25 @@ def show_dashboard():
     with col_table:
         with tabs[active_tab_idx]:
             if filtered_by_type.empty:
-                st.info(f"Không có phiếu nào cho loại yêu cầu '{selected_request_type}' với bộ lọc đã chọn.")
+                st.markdown(f"""
+                <div style="
+                    padding: 2rem;
+                    text-align: center;
+                    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                    border-radius: 0.75rem;
+                    border: 1px solid #bae6fd;
+                    margin: 1rem 0;
+                ">
+                    <p style="
+                        font-size: 1.125rem;
+                        color: #0369a1;
+                        margin: 0;
+                        font-weight: 500;
+                    ">
+                        📭 Không có phiếu nào cho loại yêu cầu '<strong>{selected_request_type}</strong>' với bộ lọc đã chọn.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 # Prepare data for display
                 display_data = []
