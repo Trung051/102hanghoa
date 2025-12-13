@@ -1190,16 +1190,31 @@ def show_update_shipment_form(current_user, found_shipment):
 
 def show_dashboard():
     """Show dashboard with request type tabs and filters"""
-    # Custom CSS to move title to top
-    st.markdown("""
+    # Custom CSS to move title to top and center tabs when filter is open
+    filter_visible = st.session_state.get('filter_visible', True)
+    center_tabs_css = ""
+    if filter_visible:
+        center_tabs_css = """
+        div[data-testid="stTabs"] > div > div[data-baseweb="tab-list"] {
+            justify-content: center !important;
+        }
+        """
+    
+    st.markdown(f"""
     <style>
-    .main .block-container {
-        padding-top: 1rem;
-    }
-    h1 {
+    .main .block-container {{
+        padding-top: 0.2rem;
+        padding-bottom: 1rem;
+    }}
+    h1 {{
         margin-top: 0;
         padding-top: 0;
-    }
+        margin-bottom: 0.3rem;
+    }}
+    div[data-testid="stTabs"] {{
+        margin-bottom: 1rem;
+    }}
+    {center_tabs_css}
     </style>
     """, unsafe_allow_html=True)
     st.title("QUẢN LÝ SỬA CHỮA")
@@ -1224,23 +1239,28 @@ def show_dashboard():
     if 'filter_visible' not in st.session_state:
         st.session_state['filter_visible'] = True
     
-    # Tabs for request types with filter toggle button
-    col_tabs, col_toggle = st.columns([0.95, 0.05])
-    
-    with col_tabs:
-        tabs = st.tabs(REQUEST_TYPES)
-    
-    with col_toggle:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
-        if st.session_state['filter_visible']:
-            if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
-                st.session_state['filter_visible'] = False
-                st.rerun()
-        else:
-            if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc", use_container_width=True):
-                st.session_state['filter_visible'] = True
-                st.rerun()
+    # Tabs for request types with filter toggle button next to tabs
+    # Create a row with tabs and button side by side
+    tabs_row = st.container()
+    with tabs_row:
+        # Use columns to place tabs and button on same line
+        # Button should be right next to the last tab
+        col_tabs, col_btn = st.columns([0.92, 0.08])
+        
+        with col_tabs:
+            tabs = st.tabs(REQUEST_TYPES)
+        
+        with col_btn:
+            # Align button vertically with tabs
+            st.write("")  # Spacing to align with tabs
+            if st.session_state['filter_visible']:
+                if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
+                    st.session_state['filter_visible'] = False
+                    st.rerun()
+            else:
+                if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc", use_container_width=True):
+                    st.session_state['filter_visible'] = True
+                    st.rerun()
     
     # Determine which tab is active by checking session state
     if 'active_request_type_tab' not in st.session_state:
@@ -1267,10 +1287,6 @@ def show_dashboard():
     else:
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
-    
-    # Initialize filter visibility state BEFORE using it
-    if 'filter_visible' not in st.session_state:
-        st.session_state['filter_visible'] = True
     
     # Layout: Filters on left, Table on right
     if st.session_state['filter_visible']:
