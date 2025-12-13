@@ -1777,6 +1777,518 @@ def show_manage_shipments():
             st.divider()
 
 
+def show_dashboard():
+    """Dashboard hiển thị phiếu theo loại yêu cầu với bộ lọc và phân trang"""
+    st.header("📊 Dashboard Quản Lý Sửa Chữa")
+    
+    # Khởi tạo session state cho dashboard
+    if 'dashboard_request_type' not in st.session_state:
+        st.session_state['dashboard_request_type'] = REQUEST_TYPES[0] if REQUEST_TYPES else ''
+    if 'dashboard_detail_id' not in st.session_state:
+        st.session_state['dashboard_detail_id'] = None
+    
+    # Tabs cho các loại yêu cầu
+    tab_names = REQUEST_TYPES if REQUEST_TYPES else []
+    if not tab_names:
+        st.error("Chưa có loại yêu cầu nào được cấu hình")
+        return
+    
+    tabs = st.tabs(tab_names)
+    
+    # Xác định tab được chọn dựa trên index tab được click
+    # Streamlit tự động quản lý tab selection, ta chỉ cần lấy index
+    selected_tab_idx = 0
+    for idx, tab_name in enumerate(tab_names):
+        if tab_name == st.session_state.get('dashboard_request_type', tab_names[0]):
+            selected_tab_idx = idx
+            break
+    
+    # Xử lý từng tab
+    for tab_idx, (tab, request_type) in enumerate(zip(tabs, tab_names)):
+        with tab:
+            # Cập nhật request_type khi tab này được chọn (chỉ tab active mới chạy code này)
+            page_key = f"dashboard_page_{request_type}"
+            if st.session_state.get('dashboard_request_type') != request_type:
+                st.session_state['dashboard_request_type'] = request_type
+                if page_key not in st.session_state:
+                    st.session_state[page_key] = 1
+            
+            # Bộ lọc
+            col_filter1, col_filter2, col_filter3 = st.columns([1, 1, 2])
+            
+            with col_filter1:
+                status_options = ['Toàn bộ'] + STATUS_VALUES
+                status_key = f"status_filter_{request_type}"
+                if status_key not in st.session_state:
+                    st.session_state[status_key] = 'Toàn bộ'
+                
+                current_status_idx = 0
+                if st.session_state[status_key] in status_options:
+                    current_status_idx = status_options.index(st.session_state[status_key])
+                
+                selected_status = st.selectbox(
+                    "Trạng thái:",
+                    status_options,
+                    index=current_status_idx,
+                    key=status_key
+                )
+                if selected_status != st.session_state[status_key]:
+                    st.session_state[status_key] = selected_status
+                    page_key = f"dashboard_page_{request_type}"
+                    st.session_state[page_key] = 1
+                    st.rerun()
+            
+            with col_filter2:
+                time_options = ['Hôm nay', 'Tuần này', 'Tháng này', 'Toàn bộ']
+                time_key = f"time_filter_{request_type}"
+                if time_key not in st.session_state:
+                    st.session_state[time_key] = 'Hôm nay'
+                
+                current_time_idx = 0
+                if st.session_state[time_key] in time_options:
+                    current_time_idx = time_options.index(st.session_state[time_key])
+                
+                selected_time = st.selectbox(
+                    "Thời gian:",
+                    time_options,
+                    index=current_time_idx,
+                    key=time_key
+                )
+                if selected_time != st.session_state[time_key]:
+                    st.session_state[time_key] = selected_time
+                    page_key = f"dashboard_page_{request_type}"
+                    st.session_state[page_key] = 1
+                    st.rerun()
+            
+            with col_filter3:
+                st.write("")  # Spacer
+            
+            # Lấy dữ liệu
+            df = get_all_shipments()
+            
+            if df.empty:
+                st.info("📭 Chưa có phiếu nào")
+                continue
+            
+            # Lọc theo loại yêu cầu
+            filtered_df = df[df['request_type'] == request_type].copy()
+            
+            # Lọc theo trạng thái
+            status_key = f"status_filter_{request_type}"
+            selected_status = st.session_state.get(status_key, 'Toàn bộ')
+            if selected_status != 'Toàn bộ':
+                filtered_df = filtered_df[filtered_df['status'] == selected_status]
+            
+            # Lọc theo thời gian
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            time_key = f"time_filter_{request_type}"
+            selected_time = st.session_state.get(time_key, 'Hôm nay')
+            
+            if selected_time == 'Hôm nay':
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                filtered_df = filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= today_start
+                ]
+            elif st.session_state['dashboard_time_filter'] == 'Tuần này':
+                week_start = now - timedelta(days=now.weekday())
+                week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                filtered_df = filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= week_start
+                ]
+            elif selected_time == 'Tháng này':
+                month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                filtered_df = filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= month_start
+                ]
+            # 'Toàn bộ' không cần lọc thêm
+            
+            # Sắp xếp theo last_updated (mới nhất trước)
+            filtered_df['last_updated_parsed'] = pd.to_datetime(filtered_df['last_updated'], errors='coerce')
+            filtered_df = filtered_df.sort_values('last_updated_parsed', ascending=False, na_position='last')
+            
+            # Phân trang: 10 phiếu mỗi trang
+            items_per_page = 10
+            total_items = len(filtered_df)
+            total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 1
+            
+            # Hiển thị thông tin phân trang
+            st.caption(f"Hiển thị {start_idx + 1}-{min(end_idx, total_items)} trong tổng số {total_items} phiếu")
+            
+            # Nút điều hướng phân trang
+            page_key = f"dashboard_page_{request_type}"
+            if page_key not in st.session_state:
+                st.session_state[page_key] = 1
+            
+            if total_pages > 1:
+                col_page1, col_page2, col_page3 = st.columns([1, 2, 1])
+                with col_page1:
+                    if st.button("◀ Trước", key=f"prev_page_{request_type}", disabled=(st.session_state[page_key] <= 1)):
+                        st.session_state[page_key] -= 1
+                        st.rerun()
+                with col_page2:
+                    st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Trang {st.session_state[page_key]}/{total_pages}</div>", unsafe_allow_html=True)
+                with col_page3:
+                    if st.button("Sau ▶", key=f"next_page_{request_type}", disabled=(st.session_state[page_key] >= total_pages)):
+                        st.session_state[page_key] += 1
+                        st.rerun()
+            
+            # Sử dụng page key riêng cho mỗi request type
+            current_page = st.session_state[page_key]
+            if current_page > total_pages:
+                st.session_state[page_key] = total_pages
+                current_page = total_pages
+            if current_page < 1:
+                st.session_state[page_key] = 1
+                current_page = 1
+            
+            start_idx = (current_page - 1) * items_per_page
+            end_idx = start_idx + items_per_page
+            page_df = filtered_df.iloc[start_idx:end_idx]
+            
+            # Hiển thị bảng dữ liệu
+            if page_df.empty:
+                st.info("📭 Không có phiếu nào phù hợp với bộ lọc")
+            else:
+                # CSS cho bảng và trạng thái
+                st.markdown("""
+                <style>
+                .dashboard-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 1rem 0;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    background: white;
+                }
+                .dashboard-table th {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 14px 12px;
+                    text-align: left;
+                    font-weight: 600;
+                    font-size: 0.9rem;
+                    border: 1px solid #5a67d8;
+                }
+                .dashboard-table td {
+                    padding: 12px;
+                    border: 1px solid #e5e7eb;
+                    background: white;
+                    font-size: 0.875rem;
+                    vertical-align: middle;
+                }
+                .dashboard-table tr:nth-child(even) {
+                    background: #f9fafb;
+                }
+                .dashboard-table tr:hover {
+                    background: #f3f4f6;
+                    transition: background 0.2s;
+                }
+                .status-badge {
+                    padding: 6px 14px;
+                    border-radius: 20px;
+                    font-weight: 600;
+                    font-size: 0.8rem;
+                    display: inline-block;
+                    text-align: center;
+                    min-width: 130px;
+                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+                .status-0 { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; } /* Đã nhận - đỏ nhạt */
+                .status-1 { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; } /* Chuyển kho - vàng nhạt */
+                .status-2 { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; } /* Đang kiểm tra - xanh dương nhạt */
+                .status-3 { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; } /* Gửi NCC sửa - tím nhạt */
+                .status-4 { background: #fce7f3; color: #9f1239; border: 1px solid #fbcfe8; } /* Đang sửa chữa - hồng nhạt */
+                .status-5 { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; } /* Hoàn thành sửa chữa - xanh lá nhạt */
+                .status-6 { background: #e0f2fe; color: #0c4a6e; border: 1px solid #bae6fd; } /* Chuyển cửa hàng - xanh cyan nhạt */
+                .status-7 { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; } /* Chờ trả khách - vàng */
+                .status-8 { background: #10b981; color: white; border: 1px solid #059669; box-shadow: 0 2px 4px rgba(16,185,129,0.3); } /* Hoàn thành - xanh lá đậm */
+                .update-time-box {
+                    background: #f3f4f6;
+                    padding: 4px 10px;
+                    border-radius: 6px;
+                    font-size: 0.7rem;
+                    color: #6b7280;
+                    display: block;
+                    margin-top: 6px;
+                    border: 1px solid #e5e7eb;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                # Tạo bảng HTML với styling đẹp
+                table_rows = []
+                detail_buttons = {}  # Lưu mapping ID -> key để tạo nút
+                
+                for idx, row in page_df.iterrows():
+                    qr_code = str(row.get('qr_code', ''))
+                    device_name = str(row.get('device_name', ''))
+                    imei = str(row.get('imei', ''))
+                    row_id = row['id']
+                    
+                    # Ngày nhận
+                    receive_date = ''
+                    if pd.notna(row.get('received_time')):
+                        try:
+                            receive_date = pd.to_datetime(row['received_time']).strftime('%d/%m/%Y')
+                        except:
+                            receive_date = str(row.get('received_time', ''))[:10]
+                    elif pd.notna(row.get('sent_time')):
+                        try:
+                            receive_date = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y')
+                        except:
+                            receive_date = str(row.get('sent_time', ''))[:10]
+                    
+                    # Ngày trả (completed_time)
+                    return_date = ''
+                    if pd.notna(row.get('completed_time')):
+                        try:
+                            return_date = pd.to_datetime(row['completed_time']).strftime('%d/%m/%Y')
+                        except:
+                            return_date = str(row.get('completed_time', ''))[:10]
+                    
+                    # Trạng thái với màu sắc
+                    status = str(row.get('status', ''))
+                    status_class = 'status-0'
+                    status_order = {
+                        'Đã nhận': 0,
+                        'Chuyển kho': 1,
+                        'Đang kiểm tra': 2,
+                        'Gửi NCC sửa': 3,
+                        'Đang sửa chữa': 4,
+                        'Hoàn thành sửa chữa': 5,
+                        'Chuyển cửa hàng': 6,
+                        'Chờ trả khách': 7,
+                        'Hoàn thành': 8
+                    }
+                    status_idx = status_order.get(status, 0)
+                    status_class = f'status-{status_idx}'
+                    
+                    # Thời gian cập nhật
+                    update_time = ''
+                    if pd.notna(row.get('last_updated')):
+                        try:
+                            update_time = pd.to_datetime(row['last_updated']).strftime('%d/%m/%Y %H:%M')
+                        except:
+                            update_time = str(row.get('last_updated', ''))[:16]
+                    
+                    # Tạo key cho nút chi tiết
+                    detail_key = f"detail_btn_{row_id}_{request_type}"
+                    detail_buttons[row_id] = detail_key
+                    
+                    table_rows.append({
+                        'qr_code': qr_code,
+                        'device_name': device_name,
+                        'imei': imei,
+                        'receive_date': receive_date,
+                        'return_date': return_date,
+                        'status': status,
+                        'status_class': status_class,
+                        'update_time': update_time,
+                        'row_id': row_id,
+                        'detail_key': detail_key
+                    })
+                
+                # Hiển thị bảng HTML
+                table_html = """
+                <div style="overflow-x: auto;">
+                <table class="dashboard-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 12%;">Mã Yêu Cầu</th>
+                            <th style="width: 25%;">Tên Hàng</th>
+                            <th style="width: 15%;">IMEI</th>
+                            <th style="width: 10%;">Ngày Nhận</th>
+                            <th style="width: 10%;">Ngày Trả</th>
+                            <th style="width: 18%;">Trạng Thái</th>
+                            <th style="width: 10%;">Chi Tiết</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+                
+                for row_data in table_rows:
+                    table_html += f"""
+                        <tr>
+                            <td>{row_data['qr_code']}</td>
+                            <td>{row_data['device_name']}</td>
+                            <td>{row_data['imei']}</td>
+                            <td>{row_data['receive_date']}</td>
+                            <td>{row_data['return_date']}</td>
+                            <td>
+                                <span class="status-badge {row_data['status_class']}">{row_data['status']}</span>
+                                {f'<div class="update-time-box">Cập nhật: {row_data["update_time"]}</div>' if row_data['update_time'] else ''}
+                            </td>
+                            <td id="detail-cell-{row_data['row_id']}">>>></td>
+                        </tr>
+                    """
+                
+                table_html += """
+                    </tbody>
+                </table>
+                </div>
+                """
+                
+                st.markdown(table_html, unsafe_allow_html=True)
+                
+                # Tạo nút chi tiết bằng Streamlit (ẩn, chỉ dùng để trigger)
+                # Hiển thị nút dưới dạng inline với bảng
+                st.write("**Nhấn vào mã QR để xem chi tiết:**")
+                detail_cols = st.columns(min(len(table_rows), 5))
+                for col_idx, row_data in enumerate(table_rows):
+                    with detail_cols[col_idx % len(detail_cols)]:
+                        detail_btn_key = f"detail_btn_{row_data['row_id']}_{request_type}"
+                        if st.button(f">>> {row_data['qr_code']}", key=detail_btn_key, use_container_width=True):
+                            st.session_state['dashboard_detail_id'] = row_data['row_id']
+                            st.rerun()
+                
+                # Hiển thị chi tiết nếu có
+                if st.session_state.get('dashboard_detail_id'):
+                    detail_id = st.session_state['dashboard_detail_id']
+                    detail_shipment = get_shipment_by_id(detail_id)
+                    
+                    if detail_shipment:
+                        st.divider()
+                        st.subheader(f"📋 Chi Tiết Phiếu: {detail_shipment.get('qr_code', '')}")
+                        
+                        col_detail1, col_detail2 = st.columns([2, 1])
+                        
+                        with col_detail1:
+                            st.write("**Thông tin phiếu:**")
+                            info_col1, info_col2 = st.columns(2)
+                            
+                            with info_col1:
+                                st.write(f"**Mã QR:** {detail_shipment.get('qr_code', '')}")
+                                st.write(f"**IMEI:** {detail_shipment.get('imei', '')}")
+                                st.write(f"**Tên thiết bị:** {detail_shipment.get('device_name', '')}")
+                                st.write(f"**Lỗi / Tình trạng:** {detail_shipment.get('capacity', '')}")
+                            
+                            with info_col2:
+                                st.write(f"**NCC:** {detail_shipment.get('supplier', '')}")
+                                st.write(f"**Trạng thái:** {detail_shipment.get('status', '')}")
+                                if detail_shipment.get('store_name'):
+                                    st.write(f"**Cửa hàng:** {detail_shipment.get('store_name', '')}")
+                                if detail_shipment.get('sent_time'):
+                                    st.write(f"**Thời gian gửi:** {detail_shipment.get('sent_time', '')}")
+                                if detail_shipment.get('received_time'):
+                                    st.write(f"**Thời gian nhận:** {detail_shipment.get('received_time', '')}")
+                                if detail_shipment.get('completed_time'):
+                                    st.write(f"**Thời gian hoàn thành:** {detail_shipment.get('completed_time', '')}")
+                                if detail_shipment.get('last_updated'):
+                                    st.write(f"**Cập nhật lúc:** {detail_shipment.get('last_updated', '')}")
+                                st.write(f"**Người tạo:** {detail_shipment.get('created_by', '')}")
+                                if detail_shipment.get('updated_by'):
+                                    st.write(f"**Người cập nhật:** {detail_shipment.get('updated_by', '')}")
+                            
+                            if detail_shipment.get('notes'):
+                                st.write(f"**Ghi chú:** {detail_shipment.get('notes', '')}")
+                        
+                        with col_detail2:
+                            # Form cập nhật trạng thái
+                            st.write("**Cập nhật trạng thái:**")
+                            current_status = detail_shipment.get('status', '')
+                            
+                            # Tạo danh sách trạng thái động
+                            status_options = STATUS_VALUES.copy()
+                            suppliers_df = get_suppliers()
+                            for _, supplier_row in suppliers_df.iterrows():
+                                supplier_name = supplier_row['name']
+                                send_status = f"Gửi {supplier_name}"
+                                if send_status not in status_options:
+                                    status_options.append(send_status)
+                            
+                            current_status_idx = 0
+                            if current_status in status_options:
+                                current_status_idx = status_options.index(current_status)
+                            
+                            new_status = st.selectbox(
+                                "Trạng thái mới:",
+                                status_options,
+                                index=current_status_idx,
+                                key=f"update_status_{detail_id}"
+                            )
+                            
+                            update_notes = st.text_area(
+                                "Ghi chú cập nhật:",
+                                value="",
+                                key=f"update_notes_{detail_id}"
+                            )
+                            
+                            uploaded_image_detail = st.file_uploader(
+                                "Upload ảnh (tùy chọn)",
+                                type=["png", "jpg", "jpeg"],
+                                accept_multiple_files=True,
+                                key=f"upload_image_detail_{detail_id}"
+                            )
+                            
+                            if st.button("💾 Cập nhật", key=f"update_btn_{detail_id}", type="primary"):
+                                current_user = get_current_user()
+                                
+                                image_url = detail_shipment.get('image_url')
+                                if uploaded_image_detail:
+                                    urls = []
+                                    for idx, f in enumerate(uploaded_image_detail, start=1):
+                                        file_bytes = f.getvalue()
+                                        mime = f.type or "image/jpeg"
+                                        orig_name = f.name or "image.jpg"
+                                        ext = ""
+                                        if "." in orig_name:
+                                            ext = orig_name.split(".")[-1]
+                                        if not ext:
+                                            ext = "jpg"
+                                        sanitized_qr = detail_shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                        sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
+                                        drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
+                                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                        if upload_res['success']:
+                                            urls.append(upload_res['url'])
+                                        else:
+                                            st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                            st.stop()
+                                    if urls:
+                                        if image_url:
+                                            image_url = f"{image_url};{';'.join(urls)}"
+                                        else:
+                                            image_url = ";".join(urls)
+                                
+                                result = update_shipment(
+                                    shipment_id=detail_id,
+                                    status=new_status,
+                                    notes=update_notes.strip() if update_notes.strip() else detail_shipment.get('notes'),
+                                    updated_by=current_user,
+                                    image_url=image_url
+                                )
+                                
+                                if result['success']:
+                                    st.success("✅ Đã cập nhật thành công!")
+                                    # Notify Telegram if needed
+                                    updated = get_shipment_by_id(detail_id)
+                                    if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
+                                        res = notify_shipment_if_received(
+                                            detail_id,
+                                            force=not detail_shipment.get('telegram_message_id'),
+                                            is_update_image=(uploaded_image_detail is not None)
+                                        )
+                                        if res and not res.get('success'):
+                                            st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                                    st.session_state['dashboard_detail_id'] = None
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {result['error']}")
+                            
+                            if st.button("❌ Đóng", key=f"close_detail_{detail_id}"):
+                                st.session_state['dashboard_detail_id'] = None
+                                st.rerun()
+                            
+                            # Hiển thị ảnh nếu có
+                            if detail_shipment.get('image_url'):
+                                st.write("**Ảnh đính kèm:**")
+                                urls = str(detail_shipment.get('image_url', '')).split(';')
+                                urls = [u for u in urls if u.strip()]
+                                for i, u in enumerate(urls):
+                                    display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
+
+
 def show_settings_screen():
     """Show settings screen for admin to manage suppliers"""
     if not is_admin():
@@ -2625,7 +3137,7 @@ if st.sidebar.button("Đăng xuất", key="logout_btn"):
     st.rerun()
 
 # Navigation - only show Settings for admin
-nav_options = ["Quét QR", "Phiếu Chuyển", "Quản Lý Phiếu", "Lịch Sử"]
+nav_options = ["Quét QR", "Dashboard", "Phiếu Chuyển", "Quản Lý Phiếu", "Lịch Sử"]
 if is_admin():
     nav_options.append("Cài Đặt")
 
@@ -2670,6 +3182,9 @@ with content_container:
     try:
         if selected == "Quét QR":
             scan_qr_screen()
+        
+        elif selected == "Dashboard":
+            show_dashboard()
         
         elif selected == "Phiếu Chuyển":
             show_transfer_slip_screen()
