@@ -2042,10 +2042,10 @@ def show_dashboard():
                             tab1, tab2 = st.tabs(["📋 Thông tin", "✏️ Cập nhật"])
                             
                             with tab1:
-                                col_info1, col_info2, col_info3 = st.columns([2, 2, 2])
+                                col_info1, col_info2 = st.columns([2, 1])
                                 
                                 with col_info1:
-                                    st.write("**Thông tin cơ bản:**")
+                                    st.write("**Thông tin chi tiết:**")
                                     st.write(f"**Mã yêu cầu:** {shipment.get('qr_code', '')}")
                                     time_display = ''
                                     if pd.notna(shipment.get('sent_time')):
@@ -2057,19 +2057,11 @@ def show_dashboard():
                                     st.write(f"**Ngày cập nhật:** {shipment.get('last_updated', '')[:16] if shipment.get('last_updated') else 'Chưa có'}")
                                     st.write(f"**Người nhận:** {shipment.get('created_by', '')}")
                                     st.write(f"**Chi nhánh:** {shipment.get('store_name', 'Chưa có')}")
-                                
-                                with col_info2:
-                                    st.write("**Thông tin khách hàng:**")
-                                    customer_display = "Khách lẻ"
-                                    if shipment.get('store_name'):
-                                        customer_display = shipment.get('store_name')
-                                    st.write(f"**Khách hàng:** {customer_display}")
-                                    st.write(f"**Bảng giá:** Bảng giá chung")
-                                    st.write(f"**Trạng thái:** {shipment.get('status', '')}")
                                     reception_location_display = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
                                     st.write(f"**Nơi tiếp nhận:** {reception_location_display}")
+                                    st.write(f"**Trạng thái:** {shipment.get('status', '')}")
                                 
-                                with col_info3:
+                                with col_info2:
                                     st.write("**Ghi chú:**")
                                     st.text_area(
                                         "Ghi chú",
@@ -2086,28 +2078,12 @@ def show_dashboard():
                                     'Tên hàng': shipment.get('device_name', ''),
                                     'IMEI': shipment.get('imei', ''),
                                     'Ghi chú hàng yêu cầu': shipment.get('capacity', ''),
-                                    'Số lượng': '1',
                                     'Trạng thái sửa chữa': shipment.get('status', ''),
-                                    'Ngày hoàn thành': shipment.get('completed_time', '')[:10] if shipment.get('completed_time') else '',
-                                    'Tổng phí': '0'
+                                    'Ngày hoàn thành': shipment.get('completed_time', '')[:10] if shipment.get('completed_time') else ''
                                 }]
                                 
                                 item_df = pd.DataFrame(item_table_data)
                                 st.dataframe(item_df, use_container_width=True, hide_index=True)
-                                
-                                # Tổng kết
-                                col_sum1, col_sum2 = st.columns([3, 1])
-                                with col_sum1:
-                                    st.write("**Tổng số lượng:** 1")
-                                    st.write("**Tổng tiền hàng:** 0")
-                                    st.write("**Giảm giá đơn hàng:** 0")
-                                    st.write("**Khách cần trả:** 0")
-                                    st.write("**Khách đã trả:** 0")
-                                    st.write("**Còn cần trả:** 0")
-                                
-                                with col_sum2:
-                                    if st.button("📄 Xuất file", key=f"export_{shipment_id}", use_container_width=True):
-                                        st.info("Chức năng xuất file đang được phát triển")
                                 
                                 # Hiển thị ảnh nếu có
                                 if shipment.get('image_url'):
