@@ -66,6 +66,8 @@ def init_database():
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN telegram_message_id INTEGER")
         if "store_name" not in cols:
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN store_name TEXT")
+        if "reception_location" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN reception_location TEXT")
         if "request_type" not in cols:
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN request_type TEXT DEFAULT 'Sửa chữa dịch vụ'")
         if "completed_time" not in cols:
@@ -228,7 +230,7 @@ def init_database():
         conn.close()
 
 
-def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None, request_type=None):
+def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None, request_type=None, reception_location=None):
     """
     Save new shipment to database
     
@@ -255,8 +257,8 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             request_type = 'Sửa chữa dịch vụ'  # Default
         cursor.execute('''
         INSERT INTO ShipmentDetails 
-        (qr_code, imei, device_name, capacity, supplier, status, request_type, created_by, notes, image_url, telegram_message_id, store_name, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (qr_code, imei, device_name, capacity, supplier, status, request_type, created_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ''', (
             qr_code,
             imei,
@@ -269,7 +271,8 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             notes,
             image_url,
             None,
-            store_name
+            store_name,
+            reception_location
         ))
         
         conn.commit()
@@ -297,7 +300,7 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
 
 def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capacity=None, 
                    supplier=None, status=None, notes=None, updated_by=None, image_url=None,
-                   telegram_message_id=None, store_name=None, request_type=None, completed_time=None):
+                   telegram_message_id=None, store_name=None, request_type=None, completed_time=None, reception_location=None):
     """
     Update shipment information
     
@@ -364,6 +367,9 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if request_type is not None:
             updates.append('request_type = ?')
             values.append(request_type)
+        if reception_location is not None:
+            updates.append('reception_location = ?')
+            values.append(reception_location)
         if completed_time is not None:
             updates.append('completed_time = ?')
             values.append(completed_time)
@@ -512,7 +518,7 @@ def get_shipment_by_id(shipment_id):
     try:
         cursor.execute('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name
+               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated
         FROM ShipmentDetails
         WHERE id = ?
         ''', (shipment_id,))
@@ -737,7 +743,7 @@ def get_all_shipments():
     try:
         df = pd.read_sql_query('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, request_type, store_name, sent_time, received_time, completed_time, 
+               status, request_type, store_name, reception_location, sent_time, received_time, completed_time, 
                created_by, updated_by, notes, image_url, telegram_message_id, last_updated
         FROM ShipmentDetails
         ORDER BY sent_time DESC
