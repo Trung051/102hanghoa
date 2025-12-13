@@ -1220,8 +1220,27 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Tabs for request types
-    tabs = st.tabs(REQUEST_TYPES)
+    # Initialize filter visibility state BEFORE using it
+    if 'filter_visible' not in st.session_state:
+        st.session_state['filter_visible'] = True
+    
+    # Tabs for request types with filter toggle button
+    col_tabs, col_toggle = st.columns([0.95, 0.05])
+    
+    with col_tabs:
+        tabs = st.tabs(REQUEST_TYPES)
+    
+    with col_toggle:
+        st.write("")  # Spacing
+        st.write("")  # Spacing
+        if st.session_state['filter_visible']:
+            if st.button("<<", key="hide_filter_btn", help="Ẩn bộ lọc", use_container_width=True):
+                st.session_state['filter_visible'] = False
+                st.rerun()
+        else:
+            if st.button(">>", key="show_filter_btn", help="Hiện bộ lọc", use_container_width=True):
+                st.session_state['filter_visible'] = True
+                st.rerun()
     
     # Determine which tab is active by checking session state
     if 'active_request_type_tab' not in st.session_state:
@@ -1248,6 +1267,10 @@ def show_dashboard():
     else:
         # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
+    
+    # Initialize filter visibility state BEFORE using it
+    if 'filter_visible' not in st.session_state:
+        st.session_state['filter_visible'] = True
     
     # Layout: Filters on left, Table on right
     if st.session_state['filter_visible']:
