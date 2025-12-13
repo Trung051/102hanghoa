@@ -7,7 +7,19 @@ def _format_shipment_text(shipment, is_update_image=False):
     note = shipment.get('notes') or ''
     recv_time = shipment.get('received_time') or ''
     sent_time = shipment.get('sent_time') or ''
-    header = "Cập nhật ảnh" if is_update_image else "Phiếu đã nhận"
+    status = shipment.get('status', '')
+    if is_update_image:
+        header = "Cập nhật ảnh"
+    elif status == 'Đã nhận':
+        header = "Phiếu đã nhận"
+    elif status == 'Chuyển kho':
+        header = "Phiếu chuyển kho"
+    elif status == 'Gửi NCC sửa':
+        header = "Phiếu gửi NCC sửa"
+    elif status == 'Chuyển cửa hàng':
+        header = "Phiếu chuyển cửa hàng"
+    else:
+        header = f"Phiếu {status}"
     text = (
         f"<b>{header}</b>\n"
         f"QR: {shipment.get('qr_code','')}\n"
@@ -25,7 +37,7 @@ def _format_shipment_text(shipment, is_update_image=False):
 
 def notify_shipment_if_received(shipment_id, force=False, is_update_image=False):
     """
-    Send Telegram message if shipment status is 'Đã nhận'.
+    Send Telegram message if shipment status is one of: 'Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng'.
     - force: send even if already sent before
     - is_update_image: True when sending follow-up with image
     """
@@ -33,7 +45,9 @@ def notify_shipment_if_received(shipment_id, force=False, is_update_image=False)
     if not shipment:
         return
 
-    if shipment.get('status') != 'Đã nhận':
+    # Statuses that trigger Telegram notifications
+    notify_statuses = ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']
+    if shipment.get('status') not in notify_statuses:
         return
 
     already_sent = shipment.get('telegram_message_id')
