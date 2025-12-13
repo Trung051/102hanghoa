@@ -44,17 +44,20 @@ def init_database():
             capacity TEXT NOT NULL,
             supplier TEXT NOT NULL,
             status TEXT DEFAULT '{DEFAULT_STATUS}',
+            request_type TEXT NOT NULL,
             sent_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             received_time TIMESTAMP,
+            completed_time TIMESTAMP,
             created_by TEXT NOT NULL,
             updated_by TEXT,
             notes TEXT,
             image_url TEXT,
-            telegram_message_id INTEGER
+            telegram_message_id INTEGER,
+            store_name TEXT
         )
         ''')
 
-        # Ensure column image_url exists (migration safety)
+        # Ensure columns exist (migration safety)
         cursor.execute("PRAGMA table_info(ShipmentDetails)")
         cols = [row[1] for row in cursor.fetchall()]
         if "image_url" not in cols:
@@ -63,6 +66,10 @@ def init_database():
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN telegram_message_id INTEGER")
         if "store_name" not in cols:
             cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN store_name TEXT")
+        if "request_type" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN request_type TEXT DEFAULT 'Sửa chữa dịch vụ'")
+        if "completed_time" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN completed_time TIMESTAMP")
         if "last_updated" not in cols:
             # SQLite doesn't support DEFAULT CURRENT_TIMESTAMP in ALTER TABLE
             # So we add the column first, then update existing rows
@@ -221,7 +228,7 @@ def init_database():
         conn.close()
 
 
-def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None):
+def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None, request_type=None):
     """
     Save new shipment to database
     
@@ -244,10 +251,12 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
     cursor = conn.cursor()
     
     try:
+        if not request_type:
+            request_type = 'Sửa chữa dịch vụ'  # Default
         cursor.execute('''
         INSERT INTO ShipmentDetails 
-        (qr_code, imei, device_name, capacity, supplier, status, created_by, notes, image_url, telegram_message_id, store_name, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (qr_code, imei, device_name, capacity, supplier, status, request_type, created_by, notes, image_url, telegram_message_id, store_name, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ''', (
             qr_code,
             imei,
@@ -255,6 +264,7 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             capacity,
             supplier,
             status if status else DEFAULT_STATUS,
+            request_type,
             created_by,
             notes,
             image_url,
@@ -287,7 +297,7 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
 
 def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capacity=None, 
                    supplier=None, status=None, notes=None, updated_by=None, image_url=None,
-                   telegram_message_id=None, store_name=None):
+                   telegram_message_id=None, store_name=None, request_type=None, completed_time=None):
     """
     Update shipment information
     
@@ -333,8 +343,8 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if status is not None:
             updates.append('status = ?')
             values.append(status)
-            # Set received_time if status is "Đã nhận" or "Hoàn thành chuyển cửa hàng"
-            if status in ['Đã nhận', 'Hoàn thành chuyển cửa hàng']:
+            # Set received_time if status is "Đã nhận"
+            if status == 'Đã nhận':
                 updates.append('received_time = CURRENT_TIMESTAMP')
         if notes is not None:
             updates.append('notes = ?')
@@ -351,6 +361,15 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if store_name is not None:
             updates.append('store_name = ?')
             values.append(store_name)
+        if request_type is not None:
+            updates.append('request_type = ?')
+            values.append(request_type)
+        if completed_time is not None:
+            updates.append('completed_time = ?')
+            values.append(completed_time)
+        elif status == 'Hoàn thành':
+            # Auto-set completed_time when status becomes "Hoàn thành"
+            updates.append('completed_time = CURRENT_TIMESTAMP')
         
         # Luôn cập nhật last_updated khi có thay đổi
         if updates:
@@ -493,7 +512,7 @@ def get_shipment_by_id(shipment_id):
     try:
         cursor.execute('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, sent_time, received_time, created_by, updated_by, notes, image_url, telegram_message_id
+               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name
         FROM ShipmentDetails
         WHERE id = ?
         ''', (shipment_id,))
