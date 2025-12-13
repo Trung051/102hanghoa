@@ -2194,16 +2194,10 @@ def show_manage_shipments():
             request_type = row.get('request_type', 'Chưa xác định')
             st.markdown(f"""
             <div style="
-                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-                color: white;
-                padding: 1rem;
-                border-radius: 0.5rem;
-                text-align: center;
                 margin-bottom: 1rem;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             ">
-                <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.25rem;">Loại yêu cầu</div>
-                <div style="font-size: 1.125rem; font-weight: 700;">{request_type}</div>
+                <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">Loại yêu cầu</div>
+                <div style="font-size: 1.125rem; font-weight: 700; color: #3b82f6;">{request_type}</div>
             </div>
             """, unsafe_allow_html=True)
             
