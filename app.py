@@ -2042,11 +2042,13 @@ def show_dashboard():
                             tab1, tab2 = st.tabs(["📋 Thông tin", "✏️ Cập nhật"])
                             
                             with tab1:
-                                col_info1, col_info2 = st.columns([2, 1])
+                                st.write("**Thông tin chi tiết:**")
                                 
-                                with col_info1:
-                                    st.write("**Thông tin chi tiết:**")
+                                # Hàng 1: Mã yêu cầu | Thời gian
+                                col_row1_1, col_row1_2 = st.columns(2)
+                                with col_row1_1:
                                     st.write(f"**Mã yêu cầu:** {shipment.get('qr_code', '')}")
+                                with col_row1_2:
                                     time_display = ''
                                     if pd.notna(shipment.get('sent_time')):
                                         try:
@@ -2054,22 +2056,37 @@ def show_dashboard():
                                         except:
                                             time_display = str(shipment.get('sent_time', ''))[:16]
                                     st.write(f"**Thời gian:** {time_display}")
-                                    st.write(f"**Ngày cập nhật:** {shipment.get('last_updated', '')[:16] if shipment.get('last_updated') else 'Chưa có'}")
+                                
+                                # Hàng 2: Người nhận | Ngày cập nhật
+                                col_row2_1, col_row2_2 = st.columns(2)
+                                with col_row2_1:
                                     st.write(f"**Người nhận:** {shipment.get('created_by', '')}")
-                                    st.write(f"**Chi nhánh:** {shipment.get('store_name', 'Chưa có')}")
+                                with col_row2_2:
+                                    update_date = shipment.get('last_updated', '')[:16] if shipment.get('last_updated') else 'Chưa có'
+                                    st.write(f"**Ngày cập nhật:** {update_date}")
+                                
+                                # Hàng 3: Nơi tiếp nhận | Trạng thái
+                                col_row3_1, col_row3_2 = st.columns(2)
+                                with col_row3_1:
                                     reception_location_display = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
                                     st.write(f"**Nơi tiếp nhận:** {reception_location_display}")
+                                with col_row3_2:
                                     st.write(f"**Trạng thái:** {shipment.get('status', '')}")
                                 
-                                with col_info2:
-                                    st.write("**Ghi chú:**")
-                                    st.text_area(
-                                        "Ghi chú",
-                                        value=shipment.get('notes', '') or '',
-                                        height=150,
-                                        key=f"notes_display_{shipment_id}",
-                                        disabled=True
-                                    )
+                                st.divider()
+                                
+                                # Ghi chú
+                                st.write("**Ghi chú:**")
+                                st.text_area(
+                                    "Ghi chú",
+                                    value=shipment.get('notes', '') or '',
+                                    height=100,
+                                    key=f"notes_display_{shipment_id}",
+                                    disabled=True,
+                                    label_visibility="collapsed"
+                                )
+                                
+                                st.divider()
                                 
                                 # Bảng chi tiết sản phẩm
                                 st.markdown("### Chi tiết sản phẩm")
