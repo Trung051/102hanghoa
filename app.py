@@ -1189,8 +1189,8 @@ def show_update_shipment_form(current_user, found_shipment):
 
 
 def show_dashboard():
-    """Show professional dashboard with request type tabs, filters, and status battery indicators"""
-    # Professional CSS for dashboard with animations and battery status
+    """Show professional dashboard with request type tabs, filters, pagination, and status progress indicators"""
+    # Professional CSS for dashboard
     st.markdown("""
     <style>
     /* Main container */
@@ -1232,120 +1232,132 @@ def show_dashboard():
         transform: translateY(-1px);
     }
     
+    /* Filter box styling */
+    .filter-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        background: #ffffff;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+    
+    .filter-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    /* Status Progress Indicator */
+    .status-progress {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        min-width: 180px;
+    }
+    
+    .progress-bar-container {
+        position: relative;
+        width: 60px;
+        height: 24px;
+        border: 2px solid #374151;
+        border-radius: 4px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+    
+    .progress-bar-tip {
+        position: absolute;
+        right: -4px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 4px;
+        height: 12px;
+        background: #374151;
+        border-radius: 0 3px 3px 0;
+    }
+    
+    .progress-bar-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 0%;
+        transition: width 0.6s ease-in-out;
+        border-radius: 2px;
+    }
+    
+    /* Status progress percentages and colors */
+    .progress-0 .progress-bar-fill { width: 11%; background: #ef4444; } /* Đã nhận */
+    .progress-1 .progress-bar-fill { width: 22%; background: #f59e0b; } /* Chuyển kho */
+    .progress-2 .progress-bar-fill { width: 33%; background: #fbbf24; } /* Đang kiểm tra */
+    .progress-3 .progress-bar-fill { width: 44%; background: #fcd34d; } /* Gửi NCC sửa */
+    .progress-4 .progress-bar-fill { width: 55%; background: #84cc16; } /* Đang sửa chữa */
+    .progress-5 .progress-bar-fill { width: 66%; background: #65a30d; } /* Hoàn thành sửa chữa */
+    .progress-6 .progress-bar-fill { width: 77%; background: #22c55e; } /* Chuyển cửa hàng */
+    .progress-7 .progress-bar-fill { width: 88%; background: #16a34a; } /* Chờ trả khách */
+    .progress-8 .progress-bar-fill { width: 100%; background: #10b981; } /* Hoàn thành */
+    
+    .status-label {
+        color: #1f2937;
+        font-weight: 500;
+        flex: 1;
+    }
+    
+    /* Table row styling */
+    .table-row {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #f3f4f6;
+        transition: background-color 0.2s ease;
+    }
+    
+    .table-row:hover {
+        background-color: #f9fafb;
+    }
+    
+    /* Pagination styling */
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        padding: 1rem;
+    }
+    
     /* Button styling */
     .stButton > button {
         border-radius: 0.5rem;
         font-weight: 500;
         transition: all 0.2s ease;
-        padding: 0.5rem 1rem;
     }
     
     .stButton > button:hover {
         transform: translateY(-1px);
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-    
-    /* Primary button - white background like sidebar */
-    .stButton > button[kind="primary"] {
-        background: #ffffff;
-        color: #111827;
-        border: 1px solid #e5e7eb;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    }
-    
-    .stButton > button[kind="primary"]:hover {
-        border-color: #3b82f6;
-        box-shadow: 0 4px 10px rgba(59,130,246,0.16);
-        background: #ffffff;
-    }
-    
-    .stButton > button[kind="primary"]:active,
-    .stButton > button[kind="primary"]:focus {
-        background: #ffffff;
-        border-color: #3b82f6;
-    }
-    
-    /* Secondary button */
-    .stButton > button[kind="secondary"] {
-        background: #f3f4f6;
-        color: #374151;
-        border: 1px solid #d1d5db;
-    }
-    
-    .stButton > button[kind="secondary"]:hover {
-        background: #e5e7eb;
-        border-color: #9ca3af;
-    }
-    
-    /* Smooth transitions */
-    * {
-        transition: background-color 0.2s ease, border-color 0.2s ease;
-    }
-    
-    /* Battery Status Indicator */
-    .status-battery {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.25rem 0.75rem;
-        border-radius: 0.5rem;
-        font-weight: 500;
-        font-size: 0.875rem;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-    }
-    
-    .battery-container {
-        position: relative;
-        width: 40px;
-        height: 20px;
-        border: 2px solid #374151;
-        border-radius: 3px;
-        background: #ffffff;
-        overflow: hidden;
-    }
-    
-    .battery-tip {
-        position: absolute;
-        right: -4px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 3px;
-        height: 10px;
-        background: #374151;
-        border-radius: 0 2px 2px 0;
-    }
-    
-    .battery-fill {
-        position: absolute;
-        left: 0;
-        top: 0;
-        height: 100%;
-        width: 0%;
-        transition: width 0.5s ease-in-out;
-        border-radius: 1px;
-    }
-    
-    /* Status colors and fill percentages */
-    .status-0 .battery-fill { width: 11%; background: #ef4444; } /* Đã nhận */
-    .status-1 .battery-fill { width: 22%; background: #f59e0b; } /* Chuyển kho */
-    .status-2 .battery-fill { width: 33%; background: #fbbf24; } /* Đang kiểm tra */
-    .status-3 .battery-fill { width: 44%; background: #fcd34d; } /* Gửi NCC sửa */
-    .status-4 .battery-fill { width: 55%; background: #84cc16; } /* Đang sửa chữa */
-    .status-5 .battery-fill { width: 66%; background: #65a30d; } /* Hoàn thành sửa chữa */
-    .status-6 .battery-fill { width: 77%; background: #22c55e; } /* Chuyển cửa hàng */
-    .status-7 .battery-fill { width: 88%; background: #16a34a; } /* Chờ trả khách */
-    .status-8 .battery-fill { width: 100%; background: #10b981; } /* Hoàn thành */
-    
-    .status-text {
-        color: #1f2937;
-        font-weight: 500;
-    }
     </style>
     """, unsafe_allow_html=True)
+    
     st.title("QUẢN LÝ SỬA CHỮA")
     
-    # Get all shipments
+    # Initialize session state for dashboard
+    if 'dashboard_loaded' not in st.session_state:
+        st.session_state['dashboard_loaded'] = True
+        st.session_state['dashboard_page'] = {}
+        st.session_state['dashboard_filter_status'] = {}
+        st.session_state['dashboard_filter_time'] = {}
+    
+    # Get all shipments - only load when dashboard is accessed
     df = get_all_shipments()
     
     if df.empty:
@@ -1361,30 +1373,23 @@ def show_dashboard():
                 st.rerun()
         return
     
-    # Create tabs for request types (no filter box)
+    # Create tabs for request types at the top
     tabs = st.tabs(REQUEST_TYPES)
     
-    # Determine which tab is active by checking session state
-    if 'active_request_type_tab' not in st.session_state:
-        st.session_state['active_request_type_tab'] = 0
-    
-    # Get the currently active tab index - stable approach
-    # Initialize if not set
+    # Determine active tab
     if 'active_request_type_tab' not in st.session_state:
         st.session_state['active_request_type_tab'] = 0
     
     active_tab_idx = st.session_state.get('active_request_type_tab', 0)
-    
-    # Filter by request type FIRST - before tab detection to ensure data is always available
     selected_request_type = REQUEST_TYPES[active_tab_idx]
     
+    # Filter by request type
     if 'request_type' in df.columns:
         filtered_by_type = df[df['request_type'] == selected_request_type].copy()
     else:
-        # Fallback if request_type column doesn't exist yet
         filtered_by_type = df.copy()
     
-    # Sort by sent_time DESC (newest first) - always sort to ensure consistency
+    # Sort by sent_time DESC (newest first)
     if 'sent_time' in filtered_by_type.columns:
         try:
             filtered_by_type['sent_time'] = pd.to_datetime(filtered_by_type['sent_time'], errors='coerce')
@@ -1392,17 +1397,16 @@ def show_dashboard():
         except:
             pass
     
-    # Update tab index only when user clicks a different tab (not on checkbox click)
-    # This logic runs after data is prepared, so it won't affect data display
+    # Update tab index when user clicks different tab
     for idx, tab in enumerate(tabs):
         with tab:
-            # Only update if this is a different tab
             if idx != active_tab_idx:
                 st.session_state['active_request_type_tab'] = idx
-                # Re-filter data for new tab
-                new_request_type = REQUEST_TYPES[idx]
+                active_tab_idx = idx
+                selected_request_type = REQUEST_TYPES[idx]
+                # Re-filter for new tab
                 if 'request_type' in df.columns:
-                    filtered_by_type = df[df['request_type'] == new_request_type].copy()
+                    filtered_by_type = df[df['request_type'] == selected_request_type].copy()
                 else:
                     filtered_by_type = df.copy()
                 # Re-sort
@@ -1412,39 +1416,161 @@ def show_dashboard():
                         filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
                     except:
                         pass
-                active_tab_idx = idx
                 break
     
-    # Initialize selected shipments for printing
-    if 'selected_shipments_for_print' not in st.session_state:
-        st.session_state['selected_shipments_for_print'] = []
-    
-    # Main data table - display in the active tab
+    # Display content in active tab
     with tabs[active_tab_idx]:
-        if filtered_by_type.empty:
-            st.markdown(f"""
-            <div style="
-                padding: 2rem;
-                text-align: center;
-                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-                border-radius: 0.75rem;
-                border: 1px solid #bae6fd;
-                margin: 1rem 0;
-            ">
-                <p style="
-                    font-size: 1.125rem;
-                    color: #0369a1;
-                    margin: 0;
-                    font-weight: 500;
+        # Layout: Filter on left, Table on right
+        col_filter, col_table = st.columns([0.25, 0.75])
+        
+        with col_filter:
+            st.markdown('<div class="filter-box">', unsafe_allow_html=True)
+            st.markdown('<p class="filter-title">🔍 Bộ lọc</p>', unsafe_allow_html=True)
+            
+            # Status filter
+            status_options = ["Toàn bộ"] + STATUS_VALUES
+            filter_status_key = f"filter_status_{active_tab_idx}"
+            current_status = st.session_state.get(filter_status_key, 'Toàn bộ')
+            status_index = status_options.index(current_status) if current_status in status_options else 0
+            selected_status = st.selectbox(
+                "Trạng thái:",
+                status_options,
+                key=filter_status_key,
+                index=status_index
+            )
+            
+            # Time filter
+            time_options = ["Toàn bộ", "Hôm nay", "Hôm qua", "1 tuần", "1 tháng", "Thời gian tự chọn"]
+            filter_time_key = f"filter_time_{active_tab_idx}"
+            current_time = st.session_state.get(filter_time_key, 'Toàn bộ')
+            time_index = time_options.index(current_time) if current_time in time_options else 0
+            selected_time = st.selectbox(
+                "Thời gian:",
+                time_options,
+                key=filter_time_key,
+                index=time_index
+            )
+            
+            # Date range if custom time selected
+            date_range = None
+            if selected_time == "Thời gian tự chọn":
+                if 'sent_time' in filtered_by_type.columns:
+                    try:
+                        df_copy = filtered_by_type.copy()
+                        df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                        min_date = df_copy['sent_time'].min().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        max_date = df_copy['sent_time'].max().date() if not df_copy['sent_time'].isna().all() else datetime.now().date()
+                        date_range = st.date_input(
+                            "Khoảng thời gian:",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                            key=f"date_range_{active_tab_idx}"
+                        )
+                    except:
+                        pass
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Apply filters
+        if selected_status != "Toàn bộ":
+            filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
+        
+        if selected_time != "Toàn bộ" and selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
+            try:
+                df_copy = filtered_by_type.copy()
+                df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                today = datetime.now().date()
+                
+                if selected_time == "Hôm nay":
+                    filtered_by_type = df_copy[df_copy['sent_time'].dt.date == today]
+                elif selected_time == "Hôm qua":
+                    yesterday = (datetime.now() - pd.Timedelta(days=1)).date()
+                    filtered_by_type = df_copy[df_copy['sent_time'].dt.date == yesterday]
+                elif selected_time == "1 tuần":
+                    week_ago = (datetime.now() - pd.Timedelta(days=7)).date()
+                    filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= week_ago]
+                elif selected_time == "1 tháng":
+                    month_ago = (datetime.now() - pd.Timedelta(days=30)).date()
+                    filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= month_ago]
+            except:
+                pass
+        elif selected_time == "Thời gian tự chọn" and date_range and len(date_range) == 2 and 'sent_time' in filtered_by_type.columns:
+            try:
+                df_copy = filtered_by_type.copy()
+                df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
+                filtered_by_type = df_copy[
+                    (df_copy['sent_time'].dt.date >= date_range[0]) &
+                    (df_copy['sent_time'].dt.date <= date_range[1])
+                ]
+            except:
+                pass
+        
+        # Re-sort after filtering
+        if 'sent_time' in filtered_by_type.columns:
+            try:
+                filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
+            except:
+                pass
+        
+        with col_table:
+            if filtered_by_type.empty:
+                st.info(f"📭 Không có phiếu nào cho loại yêu cầu '{selected_request_type}' với bộ lọc đã chọn.")
+            else:
+                # Pagination: 10 items per page
+                items_per_page = 10
+                total_items = len(filtered_by_type)
+                total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 1
+                
+                page_key = f"page_{active_tab_idx}"
+                current_page = st.session_state.get(page_key, 1)
+                
+                # Ensure current_page is valid
+                if current_page < 1:
+                    current_page = 1
+                elif current_page > total_pages:
+                    current_page = total_pages
+                
+                # Get items for current page
+                start_idx = (current_page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                page_data = filtered_by_type.iloc[start_idx:end_idx]
+                
+                # Initialize checkbox state
+                checkbox_state_key = f"checkbox_state_{active_tab_idx}"
+                if checkbox_state_key not in st.session_state:
+                    st.session_state[checkbox_state_key] = {}
+                
+                # Table header
+                st.markdown("""
+                <div style="
+                    display: grid;
+                    grid-template-columns: 0.5fr 1.5fr 2.5fr 1.5fr 1fr 1fr 2fr 0.8fr;
+                    gap: 0.5rem;
+                    padding: 0.75rem;
+                    background: #f9fafb;
+                    border-bottom: 2px solid #e5e7eb;
+                    font-weight: 600;
+                    color: #374151;
+                    margin-bottom: 0.5rem;
                 ">
-                    📭 Không có phiếu nào cho loại yêu cầu '<strong>{selected_request_type}</strong>'.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-                # Prepare data for display
-                display_data = []
-                for idx, row in filtered_by_type.iterrows():
+                    <div>Chọn</div>
+                    <div>Mã Yêu Cầu</div>
+                    <div>Tên Hàng</div>
+                    <div>Imei</div>
+                    <div>Ngày Nhận</div>
+                    <div>Ngày Trả</div>
+                    <div>Trạng Thái</div>
+                    <div>Chi Tiết</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Display rows
+                for idx, row in page_data.iterrows():
+                    row_id = row.get('id', '')
+                    status = row.get('status', '')
+                    status_index = STATUS_VALUES.index(status) if status in STATUS_VALUES else 0
+                    
                     # Format dates
                     sent_date = ""
                     if 'sent_time' in row and pd.notna(row.get('sent_time')):
@@ -1460,139 +1586,102 @@ def show_dashboard():
                         except:
                             pass
                     
-                    # Get status for display
-                    status = row.get('status', '')
+                    # Get checkbox state
+                    checkbox_checked = st.session_state[checkbox_state_key].get(row_id, False)
                     
-                    display_data.append({
-                        'Mã Yêu Cầu': row.get('qr_code', ''),
-                        'Tên Hàng': row.get('device_name', ''),
-                        'Imei': row.get('imei', ''),
-                        'Ngày Nhận': sent_date,
-                        'Ngày Trả': completed_date,
-                        'Trạng Thái': status,  # Keep as text, will add battery indicator separately
-                        'Chi Tiết': '>>>',
-                        'ID': row.get('id', '')  # Store ID for detail popup
-                    })
-                
-                display_df = pd.DataFrame(display_data)
-                
-                # Ensure display_df is not empty before proceeding
-                if display_df.empty:
-                    st.info("Không có dữ liệu để hiển thị")
-                else:
-                    # Initialize checkbox state
-                    checkbox_state_key = f"checkbox_state_{active_tab_idx}"
-                    if checkbox_state_key not in st.session_state:
-                        st.session_state[checkbox_state_key] = {}
+                    # Create row
+                    col_check, col_qr, col_name, col_imei, col_received, col_return, col_status, col_detail = st.columns([0.5, 1.5, 2.5, 1.5, 1, 1, 2, 0.8])
                     
-                    # Use st.data_editor for interactive checkboxes
-                    # Initialize checkbox column with saved state
-                    checkbox_values = []
-                    for idx in range(len(display_df)):
-                        row_id = display_df.iloc[idx]['ID']
-                        checkbox_values.append(st.session_state[checkbox_state_key].get(row_id, False))
+                    with col_check:
+                        new_checkbox = st.checkbox("", value=checkbox_checked, key=f"cb_{active_tab_idx}_{row_id}")
+                        st.session_state[checkbox_state_key][row_id] = new_checkbox
                     
-                    # Create a copy to avoid modifying original
-                    display_df_with_checkbox = display_df.copy()
-                    display_df_with_checkbox.insert(0, 'Chọn', checkbox_values)
+                    with col_qr:
+                        st.write(row.get('qr_code', ''))
                     
-                    # Create a custom display with battery indicators
-                    # Since st.data_editor doesn't support HTML in cells, we'll create a custom table
-                    st.markdown("### Danh sách phiếu")
+                    with col_name:
+                        st.write(row.get('device_name', ''))
                     
-                    # Display table with battery status indicators
-                    for idx, row in display_df.iterrows():
-                        row_id = row['ID']
-                        status = row['Trạng Thái']
-                        status_index = STATUS_VALUES.index(status) if status in STATUS_VALUES else 0
-                        
-                        # Get checkbox state
-                        checkbox_checked = st.session_state[checkbox_state_key].get(row_id, False)
-                        
-                        # Create row with battery indicator
-                        col_check, col_qr, col_name, col_imei, col_received, col_return, col_status, col_detail = st.columns([0.5, 1.5, 2.5, 1.5, 1, 1, 2, 0.8])
-                        
-                        with col_check:
-                            # Simple checkbox - update state without immediate rerun
-                            # Streamlit will automatically rerun when checkbox changes, but we update state first
-                            new_checkbox = st.checkbox("", value=checkbox_checked, key=f"cb_{active_tab_idx}_{row_id}")
-                            # Update state - this happens after Streamlit processes the checkbox change
-                            # The key is to not call st.rerun() manually, let Streamlit handle it
-                            if f"cb_{active_tab_idx}_{row_id}" in st.session_state:
-                                st.session_state[checkbox_state_key][row_id] = st.session_state[f"cb_{active_tab_idx}_{row_id}"]
-                        
-                        with col_qr:
-                            st.write(row['Mã Yêu Cầu'])
-                        
-                        with col_name:
-                            st.write(row['Tên Hàng'])
-                        
-                        with col_imei:
-                            st.write(row['Imei'])
-                        
-                        with col_received:
-                            st.write(row['Ngày Nhận'])
-                        
-                        with col_return:
-                            st.write(row['Ngày Trả'] if row['Ngày Trả'] else '-')
-                        
-                        with col_status:
-                            st.markdown(f'''
-                            <div class="status-battery status-{status_index}">
-                                <div class="battery-container">
-                                    <div class="battery-fill"></div>
-                                    <div class="battery-tip"></div>
-                                </div>
-                                <span class="status-text">{status}</span>
+                    with col_imei:
+                        st.write(row.get('imei', ''))
+                    
+                    with col_received:
+                        st.write(sent_date)
+                    
+                    with col_return:
+                        st.write(completed_date if completed_date else '-')
+                    
+                    with col_status:
+                        st.markdown(f'''
+                        <div class="status-progress progress-{status_index}">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill"></div>
+                                <div class="progress-bar-tip"></div>
                             </div>
-                            ''', unsafe_allow_html=True)
-                        
-                        with col_detail:
-                            if st.button(">>>", key=f"detail_{active_tab_idx}_{row_id}"):
-                                st.session_state['detail_shipment_id'] = row_id
-                        
-                        st.divider()
+                            <span class="status-label">{status}</span>
+                        </div>
+                        ''', unsafe_allow_html=True)
                     
-                    # Get selected IDs
-                    selected_ids = [row_id for row_id, checked in st.session_state[checkbox_state_key].items() if checked]
+                    with col_detail:
+                        if st.button(">>>", key=f"detail_{active_tab_idx}_{row_id}"):
+                            st.session_state['detail_shipment_id'] = row_id
                     
-                    # Handle detail popup
-                    if st.session_state.get('detail_shipment_id'):
-                        show_shipment_detail_popup(st.session_state['detail_shipment_id'])
-                        st.session_state['detail_shipment_id'] = None
+                    st.divider()
+                
+                # Pagination controls
+                if total_pages > 1:
+                    col_prev, col_info, col_next = st.columns([1, 2, 1])
+                    with col_prev:
+                        if st.button("◀ Trước", disabled=(current_page == 1), key=f"prev_{active_tab_idx}"):
+                            st.session_state[page_key] = current_page - 1
+                            st.rerun()
                     
-                    # Action buttons for selected items
-                    if selected_ids:
-                        col_btn1, col_btn2 = st.columns(2)
-                        with col_btn1:
-                            if st.button("🖨️ In Tem", use_container_width=True, key=f"print_selected_{active_tab_idx}"):
-                                # Generate labels for selected shipments
-                                qr_codes = []
-                                for sid in selected_ids:
-                                    if sid in filtered_by_type['id'].values:
-                                        qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
-                                if qr_codes:
-                                    st.session_state['nav'] = "Quản Lý Phiếu"
-                                    st.session_state['selected_qr_codes'] = qr_codes
-                                    st.rerun()
-                        
-                        with col_btn2:
-                            if st.button("📊 Xuất Báo Cáo", use_container_width=True, key=f"export_selected_{active_tab_idx}"):
-                                # Export selected items
-                                selected_df = filtered_by_type[filtered_by_type['id'].isin(selected_ids)]
-                                csv = selected_df.to_csv(index=False).encode('utf-8-sig')
-                                st.download_button(
-                                    label="📥 Tải CSV",
-                                    data=csv,
-                                    file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv",
-                                    use_container_width=True,
-                                    key=f"download_csv_{active_tab_idx}"
-                                )
+                    with col_info:
+                        st.markdown(f"<div style='text-align: center; padding: 0.5rem;'>Trang {current_page}/{total_pages} ({total_items} phiếu)</div>", unsafe_allow_html=True)
+                    
+                    with col_next:
+                        if st.button("Sau ▶", disabled=(current_page == total_pages), key=f"next_{active_tab_idx}"):
+                            st.session_state[page_key] = current_page + 1
+                            st.rerun()
+                
+                # Handle detail popup
+                if st.session_state.get('detail_shipment_id'):
+                    show_shipment_detail_popup(st.session_state['detail_shipment_id'])
+                    st.session_state['detail_shipment_id'] = None
+                
+                # Get selected IDs for actions
+                selected_ids = [row_id for row_id, checked in st.session_state[checkbox_state_key].items() if checked]
+                
+                # Action buttons
+                if selected_ids:
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("🖨️ In Tem", use_container_width=True, key=f"print_{active_tab_idx}"):
+                            qr_codes = []
+                            for sid in selected_ids:
+                                if sid in filtered_by_type['id'].values:
+                                    qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
+                            if qr_codes:
+                                st.session_state['nav'] = "Quản Lý Phiếu"
+                                st.session_state['selected_qr_codes'] = qr_codes
+                                st.rerun()
+                    
+                    with col_btn2:
+                        if st.button("📊 Xuất Báo Cáo", use_container_width=True, key=f"export_{active_tab_idx}"):
+                            selected_df = filtered_by_type[filtered_by_type['id'].isin(selected_ids)]
+                            csv = selected_df.to_csv(index=False).encode('utf-8-sig')
+                            st.download_button(
+                                label="📥 Tải CSV",
+                                data=csv,
+                                file_name=f"bao_cao_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                use_container_width=True,
+                                key=f"download_{active_tab_idx}"
+                            )
 
 
 def show_shipment_detail_popup(shipment_id):
-    """Show shipment detail popup with history"""
+    """Show shipment detail popup with history and update time"""
     shipment = get_shipment_by_id(shipment_id)
     if not shipment:
         st.error("Không tìm thấy phiếu")
@@ -1611,8 +1700,44 @@ def show_shipment_detail_popup(shipment_id):
         
         with col2:
             st.write(f"**Trạng thái:** {shipment.get('status', '')}")
-            st.write(f"**Ngày nhận:** {pd.to_datetime(shipment.get('sent_time', '')).strftime('%d/%m/%Y') if shipment.get('sent_time') else ''}")
-            st.write(f"**Ngày trả:** {pd.to_datetime(shipment.get('completed_time', '')).strftime('%d/%m/%Y') if shipment.get('completed_time') else ''}")
+            sent_time_str = ""
+            if shipment.get('sent_time'):
+                try:
+                    sent_time_str = pd.to_datetime(shipment.get('sent_time')).strftime('%d/%m/%Y %H:%M:%S')
+                except:
+                    sent_time_str = shipment.get('sent_time', '')
+            st.write(f"**Ngày nhận:** {sent_time_str}")
+            
+            completed_time_str = ""
+            if shipment.get('completed_time'):
+                try:
+                    completed_time_str = pd.to_datetime(shipment.get('completed_time')).strftime('%d/%m/%Y %H:%M:%S')
+                except:
+                    completed_time_str = shipment.get('completed_time', '')
+            st.write(f"**Ngày trả:** {completed_time_str if completed_time_str else '-'}")
+            
+            # Thời gian cập nhật trạng thái
+            last_updated_str = ""
+            if shipment.get('last_updated'):
+                try:
+                    last_updated_str = pd.to_datetime(shipment.get('last_updated')).strftime('%d/%m/%Y %H:%M:%S')
+                except:
+                    last_updated_str = shipment.get('last_updated', '')
+            
+            # Box thời gian update
+            st.markdown(f"""
+            <div style="
+                background: #f0f9ff;
+                border: 1px solid #bae6fd;
+                border-radius: 0.5rem;
+                padding: 0.75rem;
+                margin-top: 0.5rem;
+            ">
+                <strong style="color: #0369a1;">⏰ Thời gian cập nhật trạng thái:</strong><br>
+                <span style="color: #1e40af; font-weight: 500;">{last_updated_str if last_updated_str else 'Chưa có'}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
             st.write(f"**Cửa hàng:** {shipment.get('store_name', '') or '-'}")
             st.write(f"**Ghi chú:** {shipment.get('notes', '') or '-'}")
         
