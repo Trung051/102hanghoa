@@ -2182,14 +2182,14 @@ def show_manage_shipments():
             # Image upload status
             if not row.get('image_url'):
                 st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
-    else:
+            else:
                 # Hỗ trợ nhiều ảnh (phân tách bằng ';')
                 urls = str(row.get('image_url') or '').split(';')
                 urls = [u for u in urls if u.strip()]
                 if urls:
                     for i, u in enumerate(urls):
                         display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
-
+            
             edit_key = f'edit_shipment_{row["id"]}'
             is_editing = st.session_state.get(edit_key, False)
             
@@ -2315,7 +2315,7 @@ def show_manage_shipments():
                             edit_key = f'edit_shipment_{row["id"]}'
                             if edit_key in st.session_state:
                                 del st.session_state[edit_key]
-            st.rerun()
+                            st.rerun()
                         else:
                             st.error(f"❌ {result['error']}")
                 
@@ -2590,7 +2590,7 @@ def show_user_management():
     user_info = get_user(selected_user)
     if not user_info:
         st.error("Không lấy được thông tin tài khoản.")
-            return
+        return
         
     with st.expander(f"✏️ Chỉnh sửa tài khoản: **{selected_user}**", expanded=False):
         with st.form("edit_user_form"):
@@ -2625,7 +2625,7 @@ def show_user_management():
                 )
                 if res['success']:
                     st.success("✅ Đã cập nhật tài khoản")
-                st.rerun()
+                    st.rerun()
                 else:
                     st.error(f"❌ {res['error']}")
 
@@ -2692,9 +2692,9 @@ def show_database_management():
                     for key in list(st.session_state.keys()):
                         if key != 'username':  # Giữ lại thông tin đăng nhập
                             del st.session_state[key]
-            st.rerun()
-                    else:
-                        st.error(f"❌ Lỗi khi xóa database: {result['error']}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Lỗi khi xóa database: {result['error']}")
     else:
         if confirm_text:
             st.warning("Vui lòng nhập chính xác 'XÓA TẤT CẢ' (chữ hoa) để xác nhận")
@@ -2749,7 +2749,7 @@ def show_google_sheets_settings():
             df = get_all_shipments()
             if df.empty:
                 st.warning("⚠️ Không có dữ liệu để push")
-        else:
+            else:
                 append_mode = (push_mode == "Thêm mới (Append)")
                 result = push_shipments_to_sheets(df, append_mode=append_mode)
                 if result['success']:
@@ -2783,8 +2783,8 @@ def show_transfer_slip_scan(current_user):
             result = create_transfer_slip(current_user)
             if result['success']:
                 st.success(f"Đã tạo phiếu chuyển: {result['transfer_code']}")
-                    st.rerun()
-                else:
+                st.rerun()
+            else:
                 st.error(f"Lỗi: {result['error']}")
         return
     
@@ -2883,7 +2883,7 @@ def show_transfer_slip_scan(current_user):
                     )
                     if result['success']:
                         success_count += 1
-        else:
+                    else:
                         error_count += 1
                 
                 if success_count > 0:
@@ -2891,7 +2891,7 @@ def show_transfer_slip_scan(current_user):
                     if error_count > 0:
                         st.warning(f"⚠️ {error_count} phiếu cập nhật thất bại")
                     st.rerun()
-    else:
+                else:
                     st.error(f"❌ Không thể cập nhật phiếu nào")
 
     st.divider()
@@ -3078,7 +3078,7 @@ try:
         if 'auto_update_count' not in st.session_state or st.session_state['auto_update_count'] != auto_result['updated_count']:
             st.session_state['auto_update_count'] = auto_result['updated_count']
             st.session_state['show_auto_update_notification'] = True
-        except Exception as e:
+except Exception as e:
     print(f"Error auto-updating status: {e}")
 
 # Add loading animation CSS and optimize performance
