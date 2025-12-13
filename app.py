@@ -983,6 +983,13 @@ def show_create_shipment_form(current_user, qr_code):
                 # Set status mặc định: "Đã nhận"
                 default_status = 'Đã nhận'
                 
+                # Tự động set nơi tiếp nhận = store_name của user
+                reception_location = store_name if store_name else None
+                if not reception_location:
+                    store_user = is_store_user()
+                    if store_user:
+                        reception_location = get_store_name_from_username(current_user)
+                
                 result = save_shipment(
                     qr_code=qr_code.strip(),
                     imei=imei.strip(),
@@ -994,7 +1001,8 @@ def show_create_shipment_form(current_user, qr_code):
                     image_url=image_url,
                     status=default_status,
                     store_name=store_name,
-                    request_type=request_type
+                    request_type=request_type,
+                    reception_location=reception_location
                 )
                 
                 if result['success']:
@@ -1392,10 +1400,16 @@ def show_manage_shipments():
 
                     # Tài khoản cửa hàng: mặc định Đã nhận
                     default_status = 'Đã nhận'
+                    # Tự động set nơi tiếp nhận = store_name của user
+                    reception_location = store_name if store_name else None
+                    if not reception_location and store_user:
+                        reception_location = get_store_name_from_username(current_user)
+                    
                     res = save_shipment(
                         qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
                         supplier if not store_user else 'Cửa hàng', current_user, notes if notes else None,
-                        status=default_status, store_name=store_name, image_url=image_url, request_type=request_type_manual
+                        status=default_status, store_name=store_name, image_url=image_url, 
+                        request_type=request_type_manual, reception_location=reception_location
                     )
                     if res['success']:
                         st.success(f"Đã tạo phiếu #{res['id']}")
@@ -1452,6 +1466,11 @@ def show_manage_shipments():
                             if store_user:
                                 store_name = get_store_name_from_username(current_user)
                             
+                            # Tự động set nơi tiếp nhận = store_name của user
+                            reception_location = store_name if store_name else None
+                            if not reception_location and store_user:
+                                reception_location = get_store_name_from_username(current_user)
+                            
                             res = save_shipment(
                                 qr_code=qr_val,
                                 imei=imei_val,
@@ -1462,7 +1481,8 @@ def show_manage_shipments():
                                 notes=None,
                                 status="Đã nhận",
                                 store_name=store_name,
-                                request_type=bulk_request_type
+                                request_type=bulk_request_type,
+                                reception_location=reception_location
                             )
                             if res['success']:
                                 success += 1
@@ -1948,137 +1968,64 @@ def show_dashboard():
                         st.session_state[page_key] += 1
                         st.rerun()
             
-            # Hiển thị bảng dữ liệu - Thiết kế mới
+            # Hiển thị chi tiết phiếu trực tiếp (bỏ bảng)
             if page_df.empty:
                 st.info("📭 Không có phiếu nào phù hợp với bộ lọc")
             else:
-                # CSS cho dashboard mới
-                st.markdown("""
-                <style>
-                .dashboard-list-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 1rem 0;
-                    background: white;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
-                .dashboard-list-table th {
-                    background: #4a90e2;
-                    color: white;
-                    padding: 12px;
-                    text-align: left;
-                    font-weight: 600;
-                    font-size: 0.9rem;
-                    border: 1px solid #3a7bc8;
-                }
-                .dashboard-list-table td {
-                    padding: 10px 12px;
-                    border: 1px solid #e5e7eb;
-                    font-size: 0.875rem;
-                }
-                .dashboard-list-table tr:nth-child(even) {
-                    background: #f9fafb;
-                }
-                .dashboard-list-table tr:hover {
-                    background: #f3f4f6;
-                }
-                .selected-row {
-                    background: #10b981 !important;
-                    color: white;
-                }
-                .selected-row td {
-                    color: white;
-                    font-weight: 600;
-                }
-                .status-text {
-                    font-weight: 600;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-                
-                # Tạo DataFrame để hiển thị bảng danh sách
-                display_data = []
-                for idx, row in page_df.iterrows():
-                    qr_code = str(row.get('qr_code', ''))
-                    row_id = row['id']
-                    
-                    # Thời gian (sent_time hoặc received_time)
-                    time_str = ''
-                    if pd.notna(row.get('sent_time')):
-                        try:
-                            time_str = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y %H:%M')
-                        except:
-                            time_str = str(row.get('sent_time', ''))[:16]
-                    elif pd.notna(row.get('received_time')):
-                        try:
-                            time_str = pd.to_datetime(row['received_time']).strftime('%d/%m/%Y %H:%M')
-                        except:
-                            time_str = str(row.get('received_time', ''))[:16]
-                    
-                    # Khách hàng (mặc định "Khách lẻ" hoặc từ store_name)
-                    customer = "Khách lẻ"
-                    if pd.notna(row.get('store_name')) and row.get('store_name'):
-                        customer = str(row.get('store_name', 'Khách lẻ'))
-                    
-                    # Khách cần trả và đã trả (mặc định 0)
-                    need_pay = "0"
-                    paid = "0"
-                    
-                    # Trạng thái
-                    status = str(row.get('status', ''))
-                    
-                    display_data.append({
-                        'Mã yêu cầu': qr_code,
-                        'Thời gian': time_str,
-                        'Khách hàng': customer,
-                        'Khách cần trả': need_pay,
-                        'Khách đã trả': paid,
-                        'Trạng thái': status,
-                        '_id': row_id  # Ẩn ID
-                    })
-                
-                # Hiển thị bảng bằng st.dataframe
-                if display_data:
-                    display_df = pd.DataFrame(display_data)
-                    display_df_display = display_df.drop(columns=['_id'])
-                    st.dataframe(
-                        display_df_display,
-                        use_container_width=True,
-                        hide_index=True,
-                        height=400
-                    )
-                
-                # Hiển thị chi tiết từng phiếu bằng expander
-                st.markdown("---")
                 st.subheader("Chi tiết phiếu")
                 
-                for item in display_data:
-                    shipment_id = item['_id']
+                # Hiển thị từng phiếu bằng expander
+                for idx, row in page_df.iterrows():
+                    shipment_id = row['id']
                     shipment = get_shipment_by_id(shipment_id)
                     
                     if shipment:
-                        # Tạo expander cho mỗi phiếu
+                        # Lấy thông tin cơ bản
+                        qr_code = str(shipment.get('qr_code', ''))
+                        status = str(shipment.get('status', ''))
+                        
+                        # Thời gian
+                        time_str = ''
+                        if pd.notna(shipment.get('sent_time')):
+                            try:
+                                time_str = pd.to_datetime(shipment['sent_time']).strftime('%d/%m/%Y %H:%M')
+                            except:
+                                time_str = str(shipment.get('sent_time', ''))[:16]
+                        elif pd.notna(shipment.get('received_time')):
+                            try:
+                                time_str = pd.to_datetime(shipment['received_time']).strftime('%d/%m/%Y %H:%M')
+                            except:
+                                time_str = str(shipment.get('received_time', ''))[:16]
+                        
+                        # Nơi tiếp nhận (reception_location hoặc store_name)
+                        reception_location = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
+                        
+                        # Tạo expander cho mỗi phiếu với thông tin cơ bản
                         with st.expander(
-                            f"📋 {item['Mã yêu cầu']} - {item['Trạng thái']}",
+                            f"📋 {qr_code} - {status}",
                             expanded=(st.session_state.get('dashboard_detail_id') == shipment_id)
                         ):
-                            # Header thông tin phiếu
-                            col_header1, col_header2 = st.columns([3, 1])
-                            with col_header1:
-                                st.markdown(f"""
-                                <div style="background: #10b981; color: white; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-                                    <strong>{shipment.get('qr_code', '')}</strong> | 
-                                    {item['Thời gian']} | 
-                                    {item['Khách hàng']} | 
-                                    Cần trả: {item['Khách cần trả']} | 
-                                    Đã trả: {item['Khách đã trả']} | 
-                                    {item['Trạng thái']}
-                                </div>
-                                """, unsafe_allow_html=True)
+                            # Hiển thị thông tin cơ bản: Mã yêu cầu, Thời gian, Nơi tiếp nhận, Trạng thái
+                            st.markdown("### Thông tin cơ bản")
+                            col_basic1, col_basic2, col_basic3, col_basic4 = st.columns(4)
                             
-                            with col_header2:
-                                if st.button("🔄 Làm mới", key=f"refresh_{shipment_id}", use_container_width=True):
-                                    st.rerun()
+                            with col_basic1:
+                                st.write(f"**Mã yêu cầu:**")
+                                st.write(f"**{qr_code}**")
+                            
+                            with col_basic2:
+                                st.write(f"**Thời gian:**")
+                                st.write(f"**{time_str}**")
+                            
+                            with col_basic3:
+                                st.write(f"**Nơi tiếp nhận:**")
+                                st.write(f"**{reception_location}**")
+                            
+                            with col_basic4:
+                                st.write(f"**Trạng thái:**")
+                                st.write(f"**{status}**")
+                            
+                            st.divider()
                             
                             # Tab thông tin
                             tab1, tab2 = st.tabs(["📋 Thông tin", "✏️ Cập nhật"])
@@ -2108,7 +2055,8 @@ def show_dashboard():
                                     st.write(f"**Khách hàng:** {customer_display}")
                                     st.write(f"**Bảng giá:** Bảng giá chung")
                                     st.write(f"**Trạng thái:** {shipment.get('status', '')}")
-                                    st.write(f"**Nơi tiếp nhận:** Tại cửa hàng")
+                                    reception_location_display = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
+                                    st.write(f"**Nơi tiếp nhận:** {reception_location_display}")
                                 
                                 with col_info3:
                                     st.write("**Ghi chú:**")
