@@ -2190,6 +2190,23 @@ def show_manage_shipments():
                 render_label_component(row)
             
         with col2:
+            # Loại yêu cầu - hiển thị to rõ ở góc bên phải
+            request_type = row.get('request_type', 'Chưa xác định')
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                color: white;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                text-align: center;
+                margin-bottom: 1rem;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            ">
+                <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.25rem;">Loại yêu cầu</div>
+                <div style="font-size: 1.125rem; font-weight: 700;">{request_type}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             # Image upload status
             if not row.get('image_url'):
                 st.markdown("<span style='color:#b91c1c;font-weight:600'>Chưa upload ảnh</span>", unsafe_allow_html=True)
@@ -2257,6 +2274,18 @@ def show_manage_shipments():
                         key=f"edit_status_{row['id']}"
                     )
                     
+                    # Loại yêu cầu
+                    current_request_type = row.get('request_type', REQUEST_TYPES[0] if REQUEST_TYPES else '')
+                    request_type_idx = 0
+                    if current_request_type in REQUEST_TYPES:
+                        request_type_idx = REQUEST_TYPES.index(current_request_type)
+                    edit_request_type = st.selectbox(
+                        "Loại yêu cầu:",
+                        REQUEST_TYPES,
+                        index=request_type_idx,
+                        key=f"edit_request_type_{row['id']}"
+                    )
+                    
                     edit_store_name = st.text_input(
                         "Cửa hàng:",
                         value=row.get('store_name', '') if pd.notna(row.get('store_name')) else '',
@@ -2308,7 +2337,8 @@ def show_manage_shipments():
                             notes=edit_notes.strip() if edit_notes.strip() else None,
                             updated_by=current_user,
                             image_url=image_url,
-                            store_name=edit_store_name.strip() if edit_store_name.strip() else None
+                            store_name=edit_store_name.strip() if edit_store_name.strip() else None,
+                            request_type=edit_request_type
                         )
                         
                         if result['success']:
