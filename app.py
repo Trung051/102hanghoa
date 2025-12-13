@@ -1339,41 +1339,6 @@ def show_dashboard():
         except:
             pass
     
-    # Apply status filter
-    if selected_status != "Toàn bộ":
-        filtered_by_type = filtered_by_type[filtered_by_type['status'] == selected_status]
-    
-    # Apply time filter
-    if selected_time != "Thời gian tự chọn" and 'sent_time' in filtered_by_type.columns:
-        try:
-            df_copy = filtered_by_type.copy()
-            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-            today = datetime.now().date()
-            
-            if selected_time == "Hôm nay":
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == today]
-            elif selected_time == "Hôm qua":
-                yesterday = (datetime.now() - pd.Timedelta(days=1)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date == yesterday]
-            elif selected_time == "1 tuần":
-                week_ago = (datetime.now() - pd.Timedelta(days=7)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= week_ago]
-            elif selected_time == "1 tháng":
-                month_ago = (datetime.now() - pd.Timedelta(days=30)).date()
-                filtered_by_type = df_copy[df_copy['sent_time'].dt.date >= month_ago]
-        except:
-            pass
-    elif selected_time == "Thời gian tự chọn" and date_range and len(date_range) == 2 and 'sent_time' in filtered_by_type.columns:
-        try:
-            df_copy = filtered_by_type.copy()
-            df_copy['sent_time'] = pd.to_datetime(df_copy['sent_time'], errors='coerce')
-            filtered_by_type = df_copy[
-                (df_copy['sent_time'].dt.date >= date_range[0]) &
-                (df_copy['sent_time'].dt.date <= date_range[1])
-            ]
-        except:
-            pass
-    
     # Limit display
     filtered_by_type = filtered_by_type.head(display_limit)
     
@@ -1389,84 +1354,87 @@ def show_dashboard():
             else:
                 # Prepare data for display
                 display_data = []
-            for idx, row in filtered_by_type.iterrows():
-                # Format dates
-                sent_date = ""
-                if 'sent_time' in row and pd.notna(row.get('sent_time')):
-                    try:
-                        sent_date = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y')
-                    except:
-                        pass
-                
-                completed_date = ""
-                if 'completed_time' in row and pd.notna(row.get('completed_time')):
-                    try:
-                        completed_date = pd.to_datetime(row['completed_time']).strftime('%d/%m/%Y')
-                    except:
-                        pass
-                
-                display_data.append({
-                    'checkbox': False,  # Will be handled separately
-                    'Mã Yêu Cầu': row.get('qr_code', ''),
-                    'Tên Hàng': row.get('device_name', ''),
-                    'Imei': row.get('imei', ''),
-                    'Ngày Nhận': sent_date,
-                    'Ngày Trả': completed_date,
-                    'Trạng Thái': row.get('status', ''),
-                    'Chi Tiết': row.get('id', '')  # Store ID for detail popup
-                })
-            
-            display_df = pd.DataFrame(display_data)
-            
-            # Create checkboxes for each row
-            selected_ids = []
-            for idx, row in display_df.iterrows():
-                col_chk, col_data = st.columns([0.05, 0.95])
-                with col_chk:
-                    shipment_id = row['Chi Tiết']
-                    checkbox_key = f"checkbox_{shipment_id}_{active_tab_idx}"
-                    if st.checkbox("", key=checkbox_key, label_visibility="collapsed"):
-                        if shipment_id not in selected_ids:
-                            selected_ids.append(shipment_id)
-                
-                with col_data:
-                    # Create clickable row
-                    detail_key = f"detail_btn_{shipment_id}_{active_tab_idx}"
-                    if st.button(f"📋 {row['Mã Yêu Cầu']} | {row['Tên Hàng']} | {row['Trạng Thái']}", key=detail_key, use_container_width=True):
-                        st.session_state[f'show_detail_{shipment_id}'] = True
+                for idx, row in filtered_by_type.iterrows():
+                    # Format dates
+                    sent_date = ""
+                    if 'sent_time' in row and pd.notna(row.get('sent_time')):
+                        try:
+                            sent_date = pd.to_datetime(row['sent_time']).strftime('%d/%m/%Y')
+                        except:
+                            pass
                     
-                    # Show detail if clicked
-                    if st.session_state.get(f'show_detail_{shipment_id}', False):
-                        show_shipment_detail_popup(shipment_id)
-                        if st.button("❌ Đóng", key=f"close_detail_{shipment_id}"):
-                            st.session_state[f'show_detail_{shipment_id}'] = False
+                    completed_date = ""
+                    if 'completed_time' in row and pd.notna(row.get('completed_time')):
+                        try:
+                            completed_date = pd.to_datetime(row['completed_time']).strftime('%d/%m/%Y')
+                        except:
+                            pass
+                    
+                    display_data.append({
+                        'Mã Yêu Cầu': row.get('qr_code', ''),
+                        'Tên Hàng': row.get('device_name', ''),
+                        'Imei': row.get('imei', ''),
+                        'Ngày Nhận': sent_date,
+                        'Ngày Trả': completed_date,
+                        'Trạng Thái': row.get('status', ''),
+                        'Chi Tiết': '>>>',
+                        'ID': row.get('id', '')  # Store ID for detail popup
+                    })
+                
+                display_df = pd.DataFrame(display_data)
+                
+                # Use st.data_editor for interactive checkboxes
+                display_df.insert(0, 'Chọn', False)
+                
+                # Display editable dataframe with checkboxes
+                edited_df = st.data_editor(
+                    display_df[['Chọn', 'Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái', 'Chi Tiết']],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=600,
+                    column_config={
+                        "Chọn": st.column_config.CheckboxColumn("Chọn"),
+                        "Chi Tiết": st.column_config.TextColumn("Chi Tiết", disabled=True)
+                    },
+                    disabled=["Mã Yêu Cầu", "Tên Hàng", "Imei", "Ngày Nhận", "Ngày Trả", "Trạng Thái", "Chi Tiết"],
+                    key=f"data_editor_{active_tab_idx}"
+                )
+                
+                # Get selected IDs from edited dataframe
+                selected_ids = []
+                if not edited_df.empty:
+                    selected_rows = edited_df[edited_df['Chọn'] == True]
+                    for idx in selected_rows.index:
+                        if idx < len(display_df):
+                            selected_ids.append(display_df.iloc[idx]['ID'])
+                
+                # Handle detail popup - use selectbox for simplicity
+                detail_shipment_id = st.selectbox(
+                    "Chọn phiếu để xem chi tiết:",
+                    [""] + display_df['ID'].tolist(),
+                    format_func=lambda x: f"{display_df[display_df['ID'] == x]['Mã Yêu Cầu'].iloc[0] if x and x in display_df['ID'].values else ''}" if x else "Chọn phiếu...",
+                    key="detail_select_dash"
+                )
+                
+                if detail_shipment_id:
+                    show_shipment_detail_popup(detail_shipment_id)
+                
+                # Handle print labels button
+                if st.session_state.get('print_labels_dash_clicked', False):
+                    if selected_ids:
+                        # Generate labels for selected shipments
+                        qr_codes = []
+                        for sid in selected_ids:
+                            if sid in filtered_by_type['id'].values:
+                                qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
+                        if qr_codes:
+                            st.session_state['nav'] = "Quản Lý Phiếu"
+                            st.session_state['selected_qr_codes'] = qr_codes
+                            st.session_state['print_labels_dash_clicked'] = False
                             st.rerun()
-            
-            # Display summary table
-            display_cols = ['Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái']
-            st.dataframe(
-                display_df[display_cols],
-                use_container_width=True,
-                hide_index=True,
-                height=600
-            )
-            
-            # Handle print labels button
-            if st.session_state.get('print_labels_dash_clicked', False):
-                if selected_ids:
-                    # Generate labels for selected shipments
-                    qr_codes = []
-                    for sid in selected_ids:
-                        if sid in filtered_by_type['id'].values:
-                            qr_codes.append(filtered_by_type[filtered_by_type['id'] == sid]['qr_code'].iloc[0])
-                    if qr_codes:
-                        st.session_state['nav'] = "Quản Lý Phiếu"
-                        st.session_state['selected_qr_codes'] = qr_codes
+                    else:
+                        st.warning("Vui lòng chọn ít nhất một phiếu để in tem")
                         st.session_state['print_labels_dash_clicked'] = False
-                        st.rerun()
-                else:
-                    st.warning("Vui lòng chọn ít nhất một phiếu để in tem")
-                    st.session_state['print_labels_dash_clicked'] = False
 
 
 def show_shipment_detail_popup(shipment_id):
