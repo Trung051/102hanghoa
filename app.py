@@ -2007,23 +2007,31 @@ def show_dashboard():
                         ):
                             # Hiển thị thông tin cơ bản: Mã yêu cầu, Thời gian, Nơi tiếp nhận, Trạng thái
                             st.markdown("### Thông tin cơ bản")
-                            col_basic1, col_basic2, col_basic3, col_basic4 = st.columns(4)
                             
-                            with col_basic1:
-                                st.write(f"**Mã yêu cầu:**")
-                                st.write(f"**{qr_code}**")
-                            
-                            with col_basic2:
-                                st.write(f"**Thời gian:**")
-                                st.write(f"**{time_str}**")
-                            
-                            with col_basic3:
-                                st.write(f"**Nơi tiếp nhận:**")
-                                st.write(f"**{reception_location}**")
-                            
-                            with col_basic4:
-                                st.write(f"**Trạng thái:**")
-                                st.write(f"**{status}**")
+                            # Hiển thị dạng bảng đẹp
+                            basic_info_html = f"""
+                            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5e7eb;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Mã yêu cầu</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #111827;">{html.escape(qr_code)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Thời gian</div>
+                                        <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(time_str)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Nơi tiếp nhận</div>
+                                        <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(reception_location)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Trạng thái</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{html.escape(status)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            """
+                            st.markdown(basic_info_html, unsafe_allow_html=True)
                             
                             st.divider()
                             
