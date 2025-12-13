@@ -1619,15 +1619,22 @@ def show_dashboard():
         filtered_by_type = df.copy()
     
     # Get filter values from session state (in case filter box is hidden)
-    if not st.session_state.get('filter_box_visible', True):
-        selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
-        selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
-        display_limit = st.session_state.get('display_limit_dash', 100)
-        date_range = st.session_state.get('dash_date_range_custom', None)
-    # If filter box is visible, values are already set above
+    # Always get filter values from session state to ensure consistency
+    selected_status = st.session_state.get('filter_status_dash', 'Toàn bộ')
+    selected_time = st.session_state.get('filter_time_dash', 'Hôm nay')
+    display_limit = st.session_state.get('display_limit_dash', 100)
+    date_range = st.session_state.get('dash_date_range_custom', None)
     
     # Table column (full width)
     col_table = st.columns(1)[0]
+    
+    # Sort by sent_time DESC (newest first) before applying filters
+    if 'sent_time' in filtered_by_type.columns:
+        try:
+            filtered_by_type['sent_time'] = pd.to_datetime(filtered_by_type['sent_time'], errors='coerce')
+            filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
+        except:
+            pass
     
     # Apply status filter
     if selected_status != "Toàn bộ":
@@ -1676,6 +1683,13 @@ def show_dashboard():
             key="download_csv_dash"
         )
         st.session_state['export_report_clicked'] = False
+    
+    # Sort again after filtering to ensure newest first
+    if 'sent_time' in filtered_by_type.columns:
+        try:
+            filtered_by_type = filtered_by_type.sort_values('sent_time', ascending=False, na_position='last')
+        except:
+            pass
     
     # Limit display
     filtered_by_type = filtered_by_type.head(display_limit)
@@ -1739,59 +1753,68 @@ def show_dashboard():
                 
                 display_df = pd.DataFrame(display_data)
                 
-                # Initialize checkbox state
-                checkbox_state_key = f"checkbox_state_{active_tab_idx}"
-                if checkbox_state_key not in st.session_state:
-                    st.session_state[checkbox_state_key] = {}
-                
-                # Use st.data_editor for interactive checkboxes
-                # Initialize checkbox column with saved state
-                checkbox_values = []
-                for idx in range(len(display_df)):
-                    row_id = display_df.iloc[idx]['ID']
-                    checkbox_values.append(st.session_state[checkbox_state_key].get(row_id, False))
-                
-                display_df.insert(0, 'Chọn', checkbox_values)
-                
-                # Display editable dataframe with checkboxes
-                edited_df = st.data_editor(
-                    display_df[['Chọn', 'Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái', 'Chi Tiết']],
-                    use_container_width=True,
-                    hide_index=True,
-                    height=600,
-                    column_config={
-                        "Chọn": st.column_config.CheckboxColumn("Chọn"),
-                        "Chi Tiết": st.column_config.TextColumn("Chi Tiết", disabled=True)
-                    },
-                    disabled=["Mã Yêu Cầu", "Tên Hàng", "Imei", "Ngày Nhận", "Ngày Trả", "Trạng Thái", "Chi Tiết"],
-                    key=f"data_editor_{active_tab_idx}"
-                )
-                
-                # Save checkbox state to session_state
-                if not edited_df.empty:
-                    for idx in range(len(edited_df)):
-                        if idx < len(display_df):
-                            row_id = display_df.iloc[idx]['ID']
-                            st.session_state[checkbox_state_key][row_id] = edited_df.iloc[idx]['Chọn']
-                
-                # Get selected IDs from edited dataframe
-                selected_ids = []
-                if not edited_df.empty:
-                    selected_rows = edited_df[edited_df['Chọn'] == True]
-                    for idx in selected_rows.index:
-                        if idx < len(display_df):
-                            selected_ids.append(display_df.iloc[idx]['ID'])
-                
-                # Handle detail popup - use selectbox for simplicity
-                detail_shipment_id = st.selectbox(
-                    "Chọn phiếu để xem chi tiết:",
-                    [""] + display_df['ID'].tolist(),
-                    format_func=lambda x: f"{display_df[display_df['ID'] == x]['Mã Yêu Cầu'].iloc[0] if x and x in display_df['ID'].values else ''}" if x else "Chọn phiếu...",
-                    key="detail_select_dash"
-                )
-                
-                if detail_shipment_id:
-                    show_shipment_detail_popup(detail_shipment_id)
+                # Ensure display_df is not empty before proceeding
+                if display_df.empty:
+                    st.info("Không có dữ liệu để hiển thị")
+                else:
+                    # Initialize checkbox state
+                    checkbox_state_key = f"checkbox_state_{active_tab_idx}"
+                    if checkbox_state_key not in st.session_state:
+                        st.session_state[checkbox_state_key] = {}
+                    
+                    # Use st.data_editor for interactive checkboxes
+                    # Initialize checkbox column with saved state
+                    checkbox_values = []
+                    for idx in range(len(display_df)):
+                        row_id = display_df.iloc[idx]['ID']
+                        checkbox_values.append(st.session_state[checkbox_state_key].get(row_id, False))
+                    
+                    # Create a copy to avoid modifying original
+                    display_df_with_checkbox = display_df.copy()
+                    display_df_with_checkbox.insert(0, 'Chọn', checkbox_values)
+                    
+                    # Display editable dataframe with checkboxes
+                    edited_df = st.data_editor(
+                        display_df_with_checkbox[['Chọn', 'Mã Yêu Cầu', 'Tên Hàng', 'Imei', 'Ngày Nhận', 'Ngày Trả', 'Trạng Thái', 'Chi Tiết']],
+                        use_container_width=True,
+                        hide_index=True,
+                        height=600,
+                        column_config={
+                            "Chọn": st.column_config.CheckboxColumn("Chọn"),
+                            "Chi Tiết": st.column_config.TextColumn("Chi Tiết", disabled=True)
+                        },
+                        disabled=["Mã Yêu Cầu", "Tên Hàng", "Imei", "Ngày Nhận", "Ngày Trả", "Trạng Thái", "Chi Tiết"],
+                        key=f"data_editor_{active_tab_idx}",
+                        num_rows="fixed"
+                    )
+                    
+                    # Save checkbox state to session_state
+                    # Map edited_df back to display_df using position (they should be in same order)
+                    if not edited_df.empty and not display_df.empty and len(edited_df) == len(display_df):
+                        for idx in range(len(edited_df)):
+                            if idx < len(display_df):
+                                row_id = display_df.iloc[idx]['ID']
+                                checkbox_value = edited_df.iloc[idx]['Chọn']
+                                st.session_state[checkbox_state_key][row_id] = checkbox_value
+                    
+                    # Get selected IDs from edited dataframe
+                    selected_ids = []
+                    if not edited_df.empty and not display_df.empty and len(edited_df) == len(display_df):
+                        for idx in range(len(edited_df)):
+                            if idx < len(display_df):
+                                if edited_df.iloc[idx]['Chọn']:
+                                    selected_ids.append(display_df.iloc[idx]['ID'])
+                    
+                    # Handle detail popup - use selectbox for simplicity
+                    detail_shipment_id = st.selectbox(
+                        "Chọn phiếu để xem chi tiết:",
+                        [""] + display_df['ID'].tolist(),
+                        format_func=lambda x: f"{display_df[display_df['ID'] == x]['Mã Yêu Cầu'].iloc[0] if x and x in display_df['ID'].values else ''}" if x else "Chọn phiếu...",
+                        key="detail_select_dash"
+                    )
+                    
+                    if detail_shipment_id:
+                        show_shipment_detail_popup(detail_shipment_id)
                 
                 # Handle print labels button
                 if st.session_state.get('print_labels_dash_clicked', False):
