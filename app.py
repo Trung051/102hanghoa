@@ -1929,8 +1929,8 @@ def show_dashboard():
             filtered_df['last_updated_parsed'] = pd.to_datetime(filtered_df['last_updated'], errors='coerce')
             filtered_df = filtered_df.sort_values('last_updated_parsed', ascending=False, na_position='last')
             
-            # Phân trang: 10 phiếu mỗi trang
-            items_per_page = 10
+            # Phân trang: 8 phiếu mỗi trang
+            items_per_page = 8
             total_items = len(filtered_df)
             total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 1
             
@@ -1955,18 +1955,41 @@ def show_dashboard():
             # Hiển thị thông tin phân trang
             st.caption(f"Hiển thị {start_idx + 1}-{min(end_idx, total_items)} trong tổng số {total_items} phiếu")
             
+            # Hiển thị nút phân trang
             if total_pages > 1:
-                col_page1, col_page2, col_page3 = st.columns([1, 2, 1])
-                with col_page1:
-                    if st.button("◀ Trước", key=f"prev_page_{request_type}", disabled=(st.session_state[page_key] <= 1)):
+                st.markdown("**Chọn trang:**")
+                # Tạo nút cho các trang (tối đa hiển thị 10 nút)
+                max_page_buttons = min(total_pages, 10)
+                page_cols = st.columns(max_page_buttons + 2)  # +2 cho nút Trước và Sau
+                
+                with page_cols[0]:
+                    if st.button("◀ Trước", key=f"prev_page_{request_type}", disabled=(current_page <= 1), use_container_width=True):
                         st.session_state[page_key] -= 1
                         st.rerun()
-                with col_page2:
-                    st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Trang {st.session_state[page_key]}/{total_pages}</div>", unsafe_allow_html=True)
-                with col_page3:
-                    if st.button("Sau ▶", key=f"next_page_{request_type}", disabled=(st.session_state[page_key] >= total_pages)):
+                
+                # Hiển thị các nút trang
+                start_page_btn = max(1, current_page - 4)
+                end_page_btn = min(total_pages, start_page_btn + max_page_buttons - 1)
+                
+                if end_page_btn - start_page_btn < max_page_buttons - 1:
+                    start_page_btn = max(1, end_page_btn - max_page_buttons + 1)
+                
+                btn_idx = 1
+                for page_num in range(start_page_btn, end_page_btn + 1):
+                    with page_cols[btn_idx]:
+                        button_type = "primary" if page_num == current_page else "secondary"
+                        if st.button(f"Trang {page_num}", key=f"page_{page_num}_{request_type}", type=button_type, use_container_width=True):
+                            if page_num != current_page:
+                                st.session_state[page_key] = page_num
+                                st.rerun()
+                    btn_idx += 1
+                
+                with page_cols[-1]:
+                    if st.button("Sau ▶", key=f"next_page_{request_type}", disabled=(current_page >= total_pages), use_container_width=True):
                         st.session_state[page_key] += 1
                         st.rerun()
+            else:
+                st.caption(f"Trang 1/1")
             
             # Hiển thị chi tiết phiếu trực tiếp (bỏ bảng)
             if page_df.empty:
