@@ -13,6 +13,7 @@ import base64
 from io import BytesIO
 import streamlit.components.v1 as components
 import requests
+import html
 
 # Write service_account.json from secrets/env if missing (for Streamlit Cloud)
 import os
@@ -2138,16 +2139,29 @@ def show_dashboard():
                 """
                 
                 for row_data in table_rows:
+                    # Escape HTML để tránh lỗi render
+                    qr_code_escaped = html.escape(str(row_data['qr_code']))
+                    device_name_escaped = html.escape(str(row_data['device_name']))
+                    imei_escaped = html.escape(str(row_data['imei']))
+                    receive_date_escaped = html.escape(str(row_data['receive_date']))
+                    return_date_escaped = html.escape(str(row_data['return_date']))
+                    status_escaped = html.escape(str(row_data['status']))
+                    update_time_escaped = html.escape(str(row_data['update_time'])) if row_data['update_time'] else ''
+                    
+                    update_time_html = ''
+                    if row_data['update_time']:
+                        update_time_html = f'<div class="update-time-box">Cập nhật: {update_time_escaped}</div>'
+                    
                     table_html += f"""
                         <tr>
-                            <td>{row_data['qr_code']}</td>
-                            <td>{row_data['device_name']}</td>
-                            <td>{row_data['imei']}</td>
-                            <td>{row_data['receive_date']}</td>
-                            <td>{row_data['return_date']}</td>
+                            <td>{qr_code_escaped}</td>
+                            <td>{device_name_escaped}</td>
+                            <td>{imei_escaped}</td>
+                            <td>{receive_date_escaped}</td>
+                            <td>{return_date_escaped}</td>
                             <td>
-                                <span class="status-badge {row_data['status_class']}">{row_data['status']}</span>
-                                {f'<div class="update-time-box">Cập nhật: {row_data["update_time"]}</div>' if row_data['update_time'] else ''}
+                                <span class="status-badge {row_data['status_class']}">{status_escaped}</span>
+                                {update_time_html}
                             </td>
                             <td id="detail-cell-{row_data['row_id']}" style="text-align: center;">
                                 <span class="detail-link" data-shipment-id="{row_data['row_id']}">>>></span>
@@ -2161,7 +2175,13 @@ def show_dashboard():
                 </div>
                 """
                 
-                st.markdown(table_html, unsafe_allow_html=True)
+                # Render HTML table - thử cả hai cách để đảm bảo hoạt động
+                # Cách 1: Sử dụng components.html (ưu tiên)
+                try:
+                    components.html(table_html, height=500, scrolling=True)
+                except:
+                    # Cách 2: Fallback về st.markdown
+                    st.markdown(table_html, unsafe_allow_html=True)
                 
                 # Tạo nút chi tiết bằng Streamlit với mã QR code
                 st.markdown("**Nhấn vào mã QR để xem chi tiết:**")
