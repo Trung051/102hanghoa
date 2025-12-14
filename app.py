@@ -1912,7 +1912,7 @@ def show_dashboard():
                 filtered_df = filtered_df[
                     pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= today_start
                 ]
-            elif st.session_state['dashboard_time_filter'] == 'Tuần này':
+            elif selected_time == 'Tuần này':
                 week_start = now - timedelta(days=now.weekday())
                 week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
                 filtered_df = filtered_df[
