@@ -307,7 +307,7 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
         shipment_id = cursor.lastrowid
         
         # Log audit
-        log_audit(shipment_id, 'CREATED', None, f"Created shipment: {qr_code}", created_by)
+        log_audit(shipment_id, 'CREATED', None, f"Đã tạo phiếu: {qr_code} - {device_name} (IMEI: {imei})", created_by)
         
         # Auto-sync to Google Sheets
         try:
@@ -454,8 +454,52 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         
         conn.commit()
         
-        # Log audit
-        log_audit(shipment_id, 'UPDATED', None, 'Shipment information updated', updated_by or 'system')
+        # Log audit - Tạo thông báo chi tiết về những gì đã thay đổi
+        changed_fields = []
+        if qr_code is not None:
+            changed_fields.append(f"Mã yêu cầu: {qr_code}")
+        if imei is not None:
+            changed_fields.append(f"IMEI: {imei}")
+        if device_name is not None:
+            changed_fields.append(f"Tên thiết bị: {device_name}")
+        if capacity is not None:
+            changed_fields.append(f"Dung lượng: {capacity}")
+        if supplier is not None:
+            changed_fields.append(f"Nhà cung cấp: {supplier}")
+        if status is not None:
+            changed_fields.append(f"Trạng thái: {status}")
+        if notes is not None:
+            note_preview = notes[:50] + ('...' if len(notes) > 50 else '')
+            changed_fields.append(f"Ghi chú: {note_preview}")
+        if request_type is not None:
+            changed_fields.append(f"Loại yêu cầu: {request_type}")
+        if store_name is not None:
+            changed_fields.append(f"Cửa hàng: {store_name}")
+        if reception_location is not None:
+            changed_fields.append(f"Nơi tiếp nhận: {reception_location}")
+        if device_status_on_reception is not None:
+            changed_fields.append(f"Tình trạng thiết bị: {device_status_on_reception}")
+        if repairer is not None:
+            changed_fields.append(f"Người sửa: {repairer}")
+        if repair_notes is not None:
+            repair_note_preview = repair_notes[:50] + ('...' if len(repair_notes) > 50 else '')
+            changed_fields.append(f"Ghi chú sửa máy: {repair_note_preview}")
+        if quality_check_notes is not None:
+            quality_note_preview = quality_check_notes[:50] + ('...' if len(quality_check_notes) > 50 else '')
+            changed_fields.append(f"Ghi chú kiểm tra: {quality_note_preview}")
+        if quotation_notes is not None:
+            quote_note_preview = quotation_notes[:50] + ('...' if len(quotation_notes) > 50 else '')
+            changed_fields.append(f"Ghi chú báo giá: {quote_note_preview}")
+        if image_url is not None:
+            changed_fields.append("Hình ảnh đã được cập nhật")
+        if repair_image_url is not None:
+            changed_fields.append("Hình ảnh sửa máy đã được cập nhật")
+        
+        if changed_fields:
+            change_detail = " | ".join(changed_fields)
+            log_audit(shipment_id, 'UPDATED', None, f"Đã cập nhật: {change_detail}", updated_by or 'system')
+        else:
+            log_audit(shipment_id, 'UPDATED', None, 'Đã cập nhật thông tin phiếu', updated_by or 'system')
         
         # Auto-sync to Google Sheets
         try:
@@ -551,7 +595,7 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None, image_ur
         
         conn.commit()
         
-        # Log audit
+        # Log audit - Thay đổi trạng thái
         log_audit(shipment_id, 'STATUS_CHANGED', old_status, new_status, updated_by)
         
         # Auto-sync to Google Sheets
