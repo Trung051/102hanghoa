@@ -2601,20 +2601,20 @@ def show_dashboard():
                                         repairer_value = None
                                         if new_status == "Đang sửa chữa":
                                             current_user_for_repairer = get_current_user()
-                                        users_df = get_all_users()
-                                        user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
-                                        current_repairer = shipment.get('repairer', current_user_for_repairer)
-                                        if current_user_for_repairer not in user_list:
-                                            user_list.insert(0, current_user_for_repairer)
-                                        
-                                        repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
-                                        
-                                        repairer_value = st.selectbox(
-                                            "Người sửa:",
-                                            user_list,
-                                            index=repairer_idx,
-                                            key=f"repairer_select_{shipment_id}"
-                                        )
+                                            users_df = get_all_users()
+                                            user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
+                                            current_repairer = shipment.get('repairer', current_user_for_repairer)
+                                            if current_user_for_repairer not in user_list:
+                                                user_list.insert(0, current_user_for_repairer)
+                                            
+                                            repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
+                                            
+                                            repairer_value = st.selectbox(
+                                                "Người sửa:",
+                                                user_list,
+                                                index=repairer_idx,
+                                                key=f"repairer_select_{shipment_id}"
+                                            )
                                     
                                         update_notes = st.text_area(
                                             "Ghi chú cập nhật:",
