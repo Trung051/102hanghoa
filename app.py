@@ -2716,6 +2716,385 @@ def show_dashboard():
                 
 
 
+def show_kt_kho_dashboard():
+    """Dashboard dành cho KT kho - hiển thị phiếu có repairer = current_user"""
+    current_user = get_current_user()
+    st.header("🔧 Xử Lý YCSC - Kỹ Thuật Kho")
+    
+    # Kiểm tra quyền
+    if not (is_admin() or is_kt_kho()):
+        st.error("❌ Bạn không có quyền truy cập trang này!")
+        return
+    
+    # Khởi tạo session state
+    if 'kt_kho_detail_id' not in st.session_state:
+        st.session_state['kt_kho_detail_id'] = None
+    if 'kt_kho_search_query' not in st.session_state:
+        st.session_state['kt_kho_search_query'] = ''
+    if 'kt_kho_search_mode' not in st.session_state:
+        st.session_state['kt_kho_search_mode'] = 'Mã yêu cầu'
+    if 'kt_kho_active_tab' not in st.session_state:
+        st.session_state['kt_kho_active_tab'] = 'Đang xử lý'
+    
+    # Cửa sổ tìm kiếm
+    with st.container():
+        st.markdown("""
+        <style>
+        div[data-testid="column"]:nth-of-type(3) button,
+        div[data-testid="column"]:nth-of-type(4) button {
+            height: 38px;
+            margin-top: 0px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        col_search1, col_search2, col_search3, col_search4 = st.columns([3, 1.5, 1, 1])
+        
+        with col_search1:
+            search_query = st.text_input(
+                "🔍 Tìm kiếm",
+                value=st.session_state.get('kt_kho_search_query', ''),
+                key='kt_kho_search_input',
+                placeholder="Nhập Mã yêu cầu hoặc IMEI...",
+                label_visibility="collapsed"
+            )
+        
+        with col_search2:
+            search_mode = st.selectbox(
+                "Tìm theo:",
+                ['Mã yêu cầu', 'IMEI'],
+                index=0 if st.session_state.get('kt_kho_search_mode', 'Mã yêu cầu') == 'Mã yêu cầu' else 1,
+                key='kt_kho_search_mode_select',
+                label_visibility="collapsed"
+            )
+        
+        with col_search3:
+            if st.button("Tìm", use_container_width=True, key='kt_kho_search_btn', type="secondary"):
+                st.session_state['kt_kho_search_query'] = search_query.strip()
+                st.session_state['kt_kho_search_mode'] = search_mode
+                st.rerun()
+        
+        with col_search4:
+            if st.button("Xóa", use_container_width=True, key='kt_kho_clear_btn', type="secondary"):
+                st.session_state['kt_kho_search_query'] = ''
+                st.session_state['kt_kho_search_mode'] = 'Mã yêu cầu'
+                st.rerun()
+    
+    # Lấy tất cả phiếu có repairer = current_user
+    df_all = get_all_shipments()
+    if df_all.empty:
+        st.info("📭 Không có phiếu nào")
+        return
+    
+    # Lọc theo repairer
+    df_filtered = df_all[df_all['repairer'] == current_user].copy()
+    
+    if df_filtered.empty:
+        st.info(f"📭 Không có phiếu nào có người sửa là **{current_user}**")
+        return
+    
+    # Xử lý tìm kiếm
+    search_query = st.session_state.get('kt_kho_search_query', '').strip()
+    search_mode = st.session_state.get('kt_kho_search_mode', 'Mã yêu cầu')
+    is_searching = bool(search_query)
+    
+    if is_searching:
+        if search_mode == 'Mã yêu cầu':
+            df_filtered = df_filtered[df_filtered['qr_code'].str.contains(search_query, case=False, na=False)].copy()
+        else:  # IMEI
+            df_filtered = df_filtered[df_filtered['imei'].str.contains(search_query, case=False, na=False)].copy()
+        
+        if df_filtered.empty:
+            st.warning(f"❌ Không tìm thấy phiếu nào với từ khóa: **{search_query}**")
+            return
+        
+        st.success(f"✅ Tìm thấy **{len(df_filtered)}** phiếu")
+        st.markdown("---")
+    
+    # Phân loại phiếu
+    # Đang xử lý: các trạng thái trong ACTIVE_STATUSES
+    # Hoàn thành: Hoàn thành YCSC
+    # Treo lâu: đang xử lý nhưng last_updated > 7 ngày
+    try:
+        from settings import ACTIVE_STATUSES, COMPLETED_STATUSES  # type: ignore
+    except ModuleNotFoundError:
+        from config import ACTIVE_STATUSES, COMPLETED_STATUSES  # type: ignore
+    
+    # Tính toán số lượng
+    df_processing = df_filtered[df_filtered['status'].isin(ACTIVE_STATUSES)].copy()
+    df_completed = df_filtered[df_filtered['status'].isin(COMPLETED_STATUSES)].copy()
+    
+    # Phiếu treo lâu: đang xử lý nhưng last_updated > 7 ngày
+    df_stuck = df_processing.copy()
+    if not df_stuck.empty:
+        df_stuck['last_updated_parsed'] = pd.to_datetime(df_stuck['last_updated'], errors='coerce')
+        df_stuck = df_stuck[df_stuck['last_updated_parsed'].notna()]
+        if not df_stuck.empty:
+            seven_days_ago = pd.Timestamp.now() - pd.Timedelta(days=7)
+            df_stuck = df_stuck[df_stuck['last_updated_parsed'] < seven_days_ago].copy()
+    
+    # Hiển thị tổng số
+    col_total1, col_total2, col_total3 = st.columns(3)
+    with col_total1:
+        st.metric("📊 Tổng số YCSC", len(df_filtered))
+    with col_total2:
+        st.metric("⚙️ Đang xử lý", len(df_processing))
+    with col_total3:
+        st.metric("✅ Hoàn thành", len(df_completed))
+    
+    if len(df_stuck) > 0:
+        st.warning(f"⚠️ Có **{len(df_stuck)}** phiếu treo lâu (quá 7 ngày chưa cập nhật)")
+    
+    st.divider()
+    
+    # Tabs: Đang xử lý, Hoàn thành, Treo lâu
+    tab_names = ["⚙️ Đang xử lý", "✅ Hoàn thành"]
+    if len(df_stuck) > 0:
+        tab_names.append(f"⚠️ Treo lâu ({len(df_stuck)})")
+    
+    active_tab = st.session_state.get('kt_kho_active_tab', 'Đang xử lý')
+    tabs = st.tabs(tab_names)
+    
+    # Tab Đang xử lý
+    with tabs[0]:
+        if df_processing.empty:
+            st.info("📭 Không có phiếu đang xử lý")
+        else:
+            # Sắp xếp theo last_updated (mới nhất trước)
+            df_processing['last_updated_parsed'] = pd.to_datetime(df_processing['last_updated'], errors='coerce')
+            df_processing = df_processing.sort_values('last_updated_parsed', ascending=False)
+            
+            # Hiển thị từng phiếu
+            for idx, row in df_processing.iterrows():
+                shipment_id = row['id']
+                shipment = get_shipment_by_id(shipment_id)
+                
+                if shipment:
+                    _display_shipment_detail_kt_kho(shipment, shipment_id)
+    
+    # Tab Hoàn thành
+    with tabs[1]:
+        if df_completed.empty:
+            st.info("📭 Không có phiếu hoàn thành")
+        else:
+            # Sắp xếp theo completed_time (mới nhất trước)
+            df_completed['completed_time_parsed'] = pd.to_datetime(df_completed['completed_time'], errors='coerce')
+            df_completed = df_completed.sort_values('completed_time_parsed', ascending=False)
+            
+            # Hiển thị từng phiếu
+            for idx, row in df_completed.iterrows():
+                shipment_id = row['id']
+                shipment = get_shipment_by_id(shipment_id)
+                
+                if shipment:
+                    _display_shipment_detail_kt_kho(shipment, shipment_id)
+    
+    # Tab Treo lâu
+    if len(df_stuck) > 0:
+        with tabs[2]:
+            # Sắp xếp theo last_updated (cũ nhất trước)
+            df_stuck = df_stuck.sort_values('last_updated_parsed', ascending=True)
+            
+            # Hiển thị từng phiếu
+            for idx, row in df_stuck.iterrows():
+                shipment_id = row['id']
+                shipment = get_shipment_by_id(shipment_id)
+                
+                if shipment:
+                    _display_shipment_detail_kt_kho(shipment, shipment_id)
+
+
+def _display_shipment_detail_kt_kho(shipment, shipment_id):
+    """Hiển thị chi tiết phiếu cho KT kho (tái sử dụng code từ dashboard)"""
+    qr_code = str(shipment.get('qr_code', ''))
+    imei = str(shipment.get('imei', 'Chưa có'))
+    status = str(shipment.get('status', ''))
+    
+    # Thời gian
+    time_str = ''
+    if pd.notna(shipment.get('sent_time')):
+        try:
+            time_str = pd.to_datetime(shipment['sent_time']).strftime('%d/%m/%Y %H:%M')
+        except:
+            time_str = str(shipment.get('sent_time', ''))[:16]
+    
+    # Tạo label cho expander
+    expander_label = f"📋 {qr_code} | IMEI: {imei} | {time_str} | {status}"
+    
+    with st.expander(
+        expander_label,
+        expanded=(st.session_state.get('kt_kho_detail_id') == shipment_id)
+    ):
+        # Copy toàn bộ code hiển thị từ dashboard (từ dòng 2241 đến 2715)
+        # Để đơn giản, tôi sẽ gọi lại logic tương tự
+        st.markdown("### Thông tin cơ bản")
+        
+        basic_info_html = f"""
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5e7eb;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
+                <div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Mã yêu cầu</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #111827;">{html.escape(qr_code)}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">IMEI</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #059669;">{html.escape(imei)}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Thời gian</div>
+                    <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(time_str)}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Trạng thái</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{html.escape(status)}</div>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(basic_info_html, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Tab thông tin và cập nhật (giống dashboard)
+        tab1, tab2 = st.tabs(["📋 Thông tin", "✏️ Cập nhật"])
+        
+        with tab1:
+            st.write("**Thông tin chi tiết:**")
+            st.write(f"**Mã yêu cầu:** {qr_code}")
+            st.write(f"**IMEI:** {imei}")
+            st.write(f"**Tên thiết bị:** {shipment.get('device_name', '')}")
+            st.write(f"**Lỗi/Tình trạng:** {shipment.get('capacity', '')}")
+            st.write(f"**Trạng thái:** {status}")
+            if shipment.get('repairer'):
+                st.write(f"**Người sửa:** {shipment.get('repairer')}")
+        
+        with tab2:
+            # Copy logic cập nhật từ dashboard
+            current_status = shipment.get('status', '')
+            status_options = STATUS_VALUES.copy()
+            suppliers_df = get_suppliers()
+            for _, supplier_row in suppliers_df.iterrows():
+                supplier_name = supplier_row['name']
+                send_status = f"Gửi {supplier_name}"
+                if send_status not in status_options:
+                    status_options.append(send_status)
+            
+            current_status_idx = 0
+            if current_status in status_options:
+                current_status_idx = status_options.index(current_status)
+            
+            col_update1, col_update2 = st.columns([2, 1])
+            
+            with col_update1:
+                new_status = st.selectbox(
+                    "Trạng thái mới:",
+                    status_options,
+                    index=current_status_idx,
+                    key=f"kt_kho_update_status_{shipment_id}"
+                )
+                
+                # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+                repairer_value = None
+                if new_status == "Đang sửa chữa":
+                    current_user_for_repairer = get_current_user()
+                    users_df = get_all_users()
+                    user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
+                    current_repairer = shipment.get('repairer', current_user_for_repairer)
+                    if current_user_for_repairer not in user_list:
+                        user_list.insert(0, current_user_for_repairer)
+                    
+                    repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
+                    
+                    repairer_value = st.selectbox(
+                        "Người sửa:",
+                        user_list,
+                        index=repairer_idx,
+                        key=f"kt_kho_repairer_select_{shipment_id}"
+                    )
+                
+                update_notes = st.text_area(
+                    "Ghi chú cập nhật:",
+                    value='',
+                    key=f"kt_kho_update_notes_{shipment_id}",
+                    height=100,
+                    placeholder="Nhập ghi chú mới của bạn..."
+                )
+                
+                uploaded_image_detail = st.file_uploader(
+                    "Upload ảnh (tùy chọn)",
+                    type=["png", "jpg", "jpeg"],
+                    accept_multiple_files=True,
+                    key=f"kt_kho_upload_image_{shipment_id}"
+                )
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 Cập nhật", key=f"kt_kho_update_btn_{shipment_id}", type="primary", use_container_width=True):
+                        current_user = get_current_user()
+                        
+                        image_url = shipment.get('image_url')
+                        if uploaded_image_detail:
+                            urls = []
+                            for idx, f in enumerate(uploaded_image_detail, start=1):
+                                file_bytes = f.getvalue()
+                                mime = f.type or "image/jpeg"
+                                orig_name = f.name or "image.jpg"
+                                ext = ""
+                                if "." in orig_name:
+                                    ext = orig_name.split(".")[-1]
+                                if not ext:
+                                    ext = "jpg"
+                                sanitized_qr = shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
+                                drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
+                                upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                if upload_res['success']:
+                                    urls.append(upload_res['url'])
+                                else:
+                                    st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                    st.stop()
+                            if urls:
+                                if image_url:
+                                    image_url = f"{image_url};{';'.join(urls)}"
+                                else:
+                                    image_url = ";".join(urls)
+                        
+                        # Xử lý ghi chú
+                        final_notes = shipment.get('notes', '')
+                        if update_notes.strip():
+                            add_note_to_history(shipment_id, update_notes.strip(), current_user)
+                            final_notes = update_notes.strip()
+                        
+                        # Cập nhật repairer
+                        repairer_to_save = None
+                        if new_status == "Đang sửa chữa":
+                            repairer_to_save = repairer_value if repairer_value else current_user
+                        
+                        result = update_shipment(
+                            shipment_id=shipment_id,
+                            status=new_status,
+                            notes=final_notes,
+                            updated_by=current_user,
+                            image_url=image_url,
+                            repairer=repairer_to_save
+                        )
+                        
+                        if result['success']:
+                            st.success("✅ Đã cập nhật thành công!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result['error']}")
+                
+                with col_btn2:
+                    if st.button("❌ Hủy", key=f"kt_kho_cancel_{shipment_id}", use_container_width=True):
+                        st.rerun()
+            
+            with col_update2:
+                st.write("**Thông tin hiện tại:**")
+                st.write(f"**Trạng thái:** {current_status}")
+                st.write(f"**Người tạo:** {shipment.get('created_by', '')}")
+
+
 def show_settings_screen():
     """Show settings screen for admin to manage suppliers"""
     if not is_admin():
@@ -3572,6 +3951,8 @@ if st.sidebar.button("Đăng xuất", key="logout_btn"):
 
 # Navigation - only show Settings for admin
 nav_options = ["Quét QR", "Dashboard", "Phiếu Chuyển", "Quản Lý Phiếu", "Lịch Sử"]
+if is_admin() or is_kt_kho():
+    nav_options.append("Xử Lý YCSC")
 if is_admin():
     nav_options.append("Cài Đặt")
 
@@ -3628,6 +4009,14 @@ with content_container:
         
         elif selected == "Lịch Sử":
             show_audit_log()
+        
+        elif selected == "Xử Lý YCSC":
+            if is_admin() or is_kt_kho():
+                show_kt_kho_dashboard()
+            else:
+                st.error("❌ Bạn không có quyền truy cập trang này!")
+                st.session_state['nav'] = "Quét QR"
+                st.rerun()
         
         elif selected == "Cài Đặt":
             show_settings_screen()
