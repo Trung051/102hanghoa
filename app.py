@@ -69,6 +69,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import (
+    add_note_to_history,
+    get_notes_history,
     init_database, save_shipment, update_shipment_status, update_shipment,
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
@@ -77,7 +79,8 @@ from database import (
     create_transfer_slip, add_shipment_to_transfer_slip, get_transfer_slip,
     get_transfer_slip_items, get_active_transfer_slip, get_all_transfer_slips,
     update_transfer_slip, update_transfer_slip_shipments_status, clear_all_data,
-    auto_update_status_after_1hour, get_active_shipments, cleanup_audit_log
+    auto_update_status_after_1hour, get_active_shipments, cleanup_audit_log,
+    add_note_to_history, get_notes_history
 )
 from qr_scanner import decode_qr_from_image
 from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username, is_kt_sr, is_kt_kho
@@ -2307,16 +2310,69 @@ def show_dashboard():
                                 
                                 st.divider()
                                 
-                                # Ghi chú
+                                # Ghi chú - Chat box style
                                 st.write("**Ghi chú:**")
-                                st.text_area(
-                                    "Ghi chú",
-                                    value=shipment.get('notes', '') or '',
-                                    height=100,
-                                    key=f"notes_display_{shipment_id}",
-                                    disabled=True,
-                                    label_visibility="collapsed"
-                                )
+                                
+                                # Lấy lịch sử ghi chú
+                                notes_history = get_notes_history(shipment_id)
+                                
+                                # Container cho chat box
+                                chat_container = st.container()
+                                with chat_container:
+                                    if not notes_history.empty:
+                                        # Hiển thị từng ghi chú như chat message
+                                        for idx, row in notes_history.iterrows():
+                                            # Format thời gian
+                                            try:
+                                                timestamp = pd.to_datetime(row['created_at'])
+                                                time_str = timestamp.strftime("%d/%m/%Y %H:%M")
+                                            except:
+                                                time_str = str(row['created_at'])
+                                            
+                                            # Chat message style
+                                            st.markdown(f"""
+                                            <div style="
+                                                background-color: #f0f2f6;
+                                                padding: 12px 16px;
+                                                border-radius: 12px;
+                                                margin-bottom: 12px;
+                                                border-left: 4px solid #1f77b4;
+                                            ">
+                                                <div style="
+                                                    font-weight: 600;
+                                                    color: #1f77b4;
+                                                    font-size: 14px;
+                                                    margin-bottom: 6px;
+                                                ">
+                                                    {row['created_by']}
+                                                </div>
+                                                <div style="
+                                                    color: #666;
+                                                    font-size: 11px;
+                                                    margin-bottom: 8px;
+                                                ">
+                                                    {time_str}
+                                                </div>
+                                                <div style="
+                                                    color: #333;
+                                                    font-size: 14px;
+                                                    white-space: pre-wrap;
+                                                    word-wrap: break-word;
+                                                ">
+                                                    {row['note_text']}
+                                                </div>
+                                            </div>
+                                            """, unsafe_allow_html=True)
+                                    else:
+                                        # Nếu chưa có ghi chú, hiển thị ghi chú cũ (nếu có) hoặc thông báo
+                                        old_notes = shipment.get('notes', '') or ''
+                                        if old_notes:
+                                            # Migrate ghi chú cũ vào history
+                                            current_user = get_current_user()
+                                            add_note_to_history(shipment_id, old_notes, current_user or shipment.get('created_by', 'System'))
+                                            st.rerun()
+                                        else:
+                                            st.info("💬 Chưa có ghi chú nào. Hãy thêm ghi chú đầu tiên!")
                                 
                                 st.divider()
                                 
@@ -2507,9 +2563,10 @@ def show_dashboard():
                                     
                                     update_notes = st.text_area(
                                         "Ghi chú cập nhật:",
-                                        value=shipment.get('notes', '') or '',
+                                        value='',
                                         key=f"update_notes_{shipment_id}",
-                                        height=100
+                                        height=100,
+                                        placeholder="Nhập ghi chú mới của bạn..."
                                     )
                                     
                                     uploaded_image_detail = st.file_uploader(
@@ -2551,10 +2608,18 @@ def show_dashboard():
                                                     else:
                                                         image_url = ";".join(urls)
                                             
+                                            # Xử lý ghi chú: nếu có ghi chú mới, lưu vào history
+                                            final_notes = shipment.get('notes', '')
+                                            if update_notes.strip():
+                                                # Có ghi chú mới, lưu vào history
+                                                add_note_to_history(shipment_id, update_notes.strip(), current_user)
+                                                # Cập nhật notes field với ghi chú mới nhất
+                                                final_notes = update_notes.strip()
+                                            
                                             result = update_shipment(
                                                 shipment_id=shipment_id,
                                                 status=new_status,
-                                                notes=update_notes.strip() if update_notes.strip() else shipment.get('notes'),
+                                                notes=final_notes,
                                                 updated_by=current_user,
                                                 image_url=image_url
                                             )
