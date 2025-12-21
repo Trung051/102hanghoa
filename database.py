@@ -156,14 +156,35 @@ def init_database():
         # Migration: Add columns if they don't exist
         cursor.execute("PRAGMA table_info(Users)")
         cols = [row[1] for row in cursor.fetchall()]
-        if "is_store" not in cols:
-            cursor.execute("ALTER TABLE Users ADD COLUMN is_store BOOLEAN DEFAULT 0")
-        if "store_name" not in cols:
-            cursor.execute("ALTER TABLE Users ADD COLUMN store_name TEXT")
-        if "is_kt_sr" not in cols:
-            cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_sr BOOLEAN DEFAULT 0")
-        if "is_kt_kho" not in cols:
-            cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_kho BOOLEAN DEFAULT 0")
+        
+        # Thêm các cột mới nếu chưa có (với error handling)
+        try:
+            if "is_store" not in cols:
+                cursor.execute("ALTER TABLE Users ADD COLUMN is_store BOOLEAN DEFAULT 0")
+                conn.commit()
+        except Exception as e:
+            print(f"Warning: Could not add is_store column: {e}")
+        
+        try:
+            if "store_name" not in cols:
+                cursor.execute("ALTER TABLE Users ADD COLUMN store_name TEXT")
+                conn.commit()
+        except Exception as e:
+            print(f"Warning: Could not add store_name column: {e}")
+        
+        try:
+            if "is_kt_sr" not in cols:
+                cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_sr BOOLEAN DEFAULT 0")
+                conn.commit()
+        except Exception as e:
+            print(f"Warning: Could not add is_kt_sr column: {e}")
+        
+        try:
+            if "is_kt_kho" not in cols:
+                cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_kho BOOLEAN DEFAULT 0")
+                conn.commit()
+        except Exception as e:
+            print(f"Warning: Could not add is_kt_kho column: {e}")
         
         # Create TransferSlips table (Phiếu chuyển)
         cursor.execute('''
@@ -707,22 +728,61 @@ def get_user(username):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute('''
-        SELECT username, password, is_admin, is_store, is_kt_sr, is_kt_kho, store_name
+        # Kiểm tra xem các cột có tồn tại không
+        cursor.execute("PRAGMA table_info(Users)")
+        cols = [row[1] for row in cursor.fetchall()]
+        
+        # Xây dựng query động dựa trên các cột có sẵn
+        select_cols = ['username', 'password', 'is_admin']
+        if 'is_store' in cols:
+            select_cols.append('is_store')
+        if 'is_kt_sr' in cols:
+            select_cols.append('is_kt_sr')
+        if 'is_kt_kho' in cols:
+            select_cols.append('is_kt_kho')
+        if 'store_name' in cols:
+            select_cols.append('store_name')
+        
+        query = f'''
+        SELECT {', '.join(select_cols)}
         FROM Users
         WHERE username = ?
-        ''', (username,))
+        '''
+        cursor.execute(query, (username,))
         result = cursor.fetchone()
         if result:
-            return {
+            user_dict = {
                 'username': result[0],
                 'password': result[1],
-                'is_admin': bool(result[2]),
-                'is_store': bool(result[3]) if len(result) > 3 else False,
-                'is_kt_sr': bool(result[4]) if len(result) > 4 else False,
-                'is_kt_kho': bool(result[5]) if len(result) > 5 else False,
-                'store_name': result[6] if len(result) > 6 else None
+                'is_admin': bool(result[2])
             }
+            
+            # Thêm các trường tùy chọn dựa trên kết quả
+            idx = 3
+            if 'is_store' in select_cols:
+                user_dict['is_store'] = bool(result[idx]) if len(result) > idx else False
+                idx += 1
+            else:
+                user_dict['is_store'] = False
+            
+            if 'is_kt_sr' in select_cols:
+                user_dict['is_kt_sr'] = bool(result[idx]) if len(result) > idx else False
+                idx += 1
+            else:
+                user_dict['is_kt_sr'] = False
+            
+            if 'is_kt_kho' in select_cols:
+                user_dict['is_kt_kho'] = bool(result[idx]) if len(result) > idx else False
+                idx += 1
+            else:
+                user_dict['is_kt_kho'] = False
+            
+            if 'store_name' in select_cols:
+                user_dict['store_name'] = result[idx] if len(result) > idx else None
+            else:
+                user_dict['store_name'] = None
+            
+            return user_dict
         return None
     except Exception as e:
         print(f"Error getting user: {e}")
