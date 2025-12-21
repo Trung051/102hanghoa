@@ -1843,21 +1843,13 @@ def show_dashboard():
                 if status_key not in st.session_state:
                     st.session_state[status_key] = 'Toàn bộ'
                 
-                current_status_idx = 0
-                if st.session_state[status_key] in status_options:
-                    current_status_idx = status_options.index(st.session_state[status_key])
-                
+                # Sử dụng value thay vì index để tránh conflict với session_state
                 selected_status = st.selectbox(
                     "Trạng thái:",
                     status_options,
-                    index=current_status_idx,
                     key=status_key
                 )
-                if selected_status != st.session_state[status_key]:
-                    st.session_state[status_key] = selected_status
-                    page_key = f"dashboard_page_{request_type}"
-                    st.session_state[page_key] = 1
-                    st.rerun()
+                # Không cần check và update vì Streamlit tự động sync với session_state qua key
             
             with col_filter2:
                 # Bộ lọc theo ngày theo sơ đồ: Trong vòng 3 ngày, 7 ngày, 30 ngày, Tháng này, Tháng trước
@@ -1866,21 +1858,13 @@ def show_dashboard():
                 if time_key not in st.session_state:
                     st.session_state[time_key] = 'Toàn bộ'
                 
-                current_time_idx = 0
-                if st.session_state[time_key] in time_options:
-                    current_time_idx = time_options.index(st.session_state[time_key])
-                
+                # Sử dụng value thay vì index để tránh conflict
                 selected_time = st.selectbox(
                     "Thời gian:",
                     time_options,
-                    index=current_time_idx,
                     key=time_key
                 )
-                if selected_time != st.session_state[time_key]:
-                    st.session_state[time_key] = selected_time
-                    page_key = f"dashboard_page_{request_type}"
-                    st.session_state[page_key] = 1
-                    st.rerun()
+                # Không cần check và update vì Streamlit tự động sync với session_state qua key
             
             with col_filter3:
                 # Hiển thị số YCSC tối đa: 10, 20, 50
@@ -1889,20 +1873,13 @@ def show_dashboard():
                     st.session_state[items_per_page_key] = 10
                 
                 items_per_page_options = [10, 20, 50]
+                # Sử dụng value thay vì index để tránh conflict với session_state
                 selected_items_per_page = st.selectbox(
                     "Hiển thị tối đa:",
                     items_per_page_options,
-                    index=items_per_page_options.index(st.session_state[items_per_page_key]) if st.session_state[items_per_page_key] in items_per_page_options else 0,
                     key=items_per_page_key
                 )
-                if selected_items_per_page != st.session_state[items_per_page_key]:
-                    st.session_state[items_per_page_key] = selected_items_per_page
-                    page_key = f"dashboard_page_{request_type}"
-                    st.session_state[page_key] = 1
-                    st.rerun()
-            
-            with col_filter3:
-                st.write("")  # Spacer
+                # Không cần check và update vì Streamlit tự động sync với session_state qua key
             
             # Lấy dữ liệu
             df = get_all_shipments()
