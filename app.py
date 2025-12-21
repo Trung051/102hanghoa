@@ -2316,7 +2316,7 @@ def show_dashboard():
                                 # Lấy lịch sử ghi chú
                                 notes_history = get_notes_history(shipment_id)
                                 
-                                # Container cho chat box
+                                # Container cho chat box - nhỏ gọn
                                 chat_container = st.container()
                                 with chat_container:
                                     if not notes_history.empty:
@@ -2329,35 +2329,41 @@ def show_dashboard():
                                             except:
                                                 time_str = str(row['created_at'])
                                             
-                                            # Chat message style
+                                            # Chat message style - nhỏ gọn
                                             st.markdown(f"""
                                             <div style="
-                                                background-color: #f0f2f6;
-                                                padding: 12px 16px;
-                                                border-radius: 12px;
-                                                margin-bottom: 12px;
-                                                border-left: 4px solid #1f77b4;
+                                                background-color: #f8f9fa;
+                                                padding: 8px 12px;
+                                                border-radius: 8px;
+                                                margin-bottom: 8px;
+                                                border-left: 3px solid #1f77b4;
                                             ">
                                                 <div style="
-                                                    font-weight: 600;
-                                                    color: #1f77b4;
-                                                    font-size: 14px;
-                                                    margin-bottom: 6px;
+                                                    display: flex;
+                                                    justify-content: space-between;
+                                                    align-items: center;
+                                                    margin-bottom: 4px;
                                                 ">
-                                                    {row['created_by']}
-                                                </div>
-                                                <div style="
-                                                    color: #666;
-                                                    font-size: 11px;
-                                                    margin-bottom: 8px;
-                                                ">
-                                                    {time_str}
+                                                    <span style="
+                                                        font-weight: 600;
+                                                        color: #1f77b4;
+                                                        font-size: 12px;
+                                                    ">
+                                                        {row['created_by']}
+                                                    </span>
+                                                    <span style="
+                                                        color: #999;
+                                                        font-size: 10px;
+                                                    ">
+                                                        {time_str}
+                                                    </span>
                                                 </div>
                                                 <div style="
                                                     color: #333;
-                                                    font-size: 14px;
+                                                    font-size: 13px;
                                                     white-space: pre-wrap;
                                                     word-wrap: break-word;
+                                                    line-height: 1.4;
                                                 ">
                                                     {row['note_text']}
                                                 </div>
