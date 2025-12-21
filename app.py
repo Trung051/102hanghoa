@@ -1155,15 +1155,37 @@ def show_update_shipment_form(current_user, found_shipment):
             key="status_select"
         )
         
+        # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+        repairer = None
+        if new_status == "Đang sửa chữa":
+            users_df = get_all_users()
+            user_list = users_df['username'].tolist() if not users_df.empty else [current_user]
+            current_repairer = found_shipment.get('repairer', current_user)
+            repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else 0
+            if current_user not in user_list:
+                user_list.insert(0, current_user)
+                repairer_idx = 0
+            
+            repairer = st.selectbox(
+                "Người sửa:",
+                user_list,
+                index=repairer_idx if current_repairer in user_list else user_list.index(current_user) if current_user in user_list else 0,
+                key="repairer_select"
+            )
+        
         notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
         
         if st.button("Cập Nhật", type="primary", key="update_btn"):
             if new_status != current_status:
-                result = update_shipment_status(
-                    qr_code=found_shipment['qr_code'],
-                    new_status=new_status,
+                # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
+                repairer_value = repairer if new_status == "Đang sửa chữa" else None
+                
+                result = update_shipment(
+                    shipment_id=found_shipment['id'],
+                    status=new_status,
                     updated_by=current_user,
-                    notes=notes if notes else None
+                    notes=notes if notes else None,
+                    repairer=repairer_value
                 )
                 
                 if result['success']:
@@ -2255,6 +2277,24 @@ def show_dashboard():
                             with tab1:
                                 st.write("**Thông tin chi tiết:**")
                                 
+                                # Hiển thị người sửa nổi bật nếu có
+                                if shipment.get('repairer'):
+                                    st.markdown(f"""
+                                    <div style="
+                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                        color: white;
+                                        padding: 16px 20px;
+                                        border-radius: 10px;
+                                        margin: 12px 0 20px 0;
+                                        font-weight: 700;
+                                        font-size: 18px;
+                                        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                                        text-align: center;
+                                    ">
+                                        👤 Người sửa: <span style="font-size: 20px; text-transform: uppercase;">{shipment.get('repairer')}</span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                
                                 # Hàng 1: Mã yêu cầu | IMEI
                                 col_row1_1, col_row1_2 = st.columns(2)
                                 with col_row1_1:
@@ -2481,7 +2521,20 @@ def show_dashboard():
                                 with col_detail2:
                                     st.markdown("**Thông tin sửa chữa:**")
                                     if shipment.get('repairer'):
-                                        st.write(f"• Người sửa: {shipment.get('repairer')}")
+                                        st.markdown(f"""
+                                        <div style="
+                                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                            color: white;
+                                            padding: 12px 16px;
+                                            border-radius: 8px;
+                                            margin: 8px 0;
+                                            font-weight: 600;
+                                            font-size: 16px;
+                                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                        ">
+                                            👤 Người sửa: <span style="font-size: 18px;">{shipment.get('repairer')}</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
                                     if shipment.get('repair_start_date'):
                                         try:
                                             repair_start = pd.to_datetime(shipment.get('repair_start_date')).strftime('%d/%m/%Y %H:%M')
@@ -2546,6 +2599,25 @@ def show_dashboard():
                                         key=f"update_status_{shipment_id}"
                                     )
                                     
+                                    # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+                                    repairer_value = None
+                                    if new_status == "Đang sửa chữa":
+                                        current_user_for_repairer = get_current_user()
+                                        users_df = get_all_users()
+                                        user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
+                                        current_repairer = shipment.get('repairer', current_user_for_repairer)
+                                        if current_user_for_repairer not in user_list:
+                                            user_list.insert(0, current_user_for_repairer)
+                                        
+                                        repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
+                                        
+                                        repairer_value = st.selectbox(
+                                            "Người sửa:",
+                                            user_list,
+                                            index=repairer_idx,
+                                            key=f"repairer_select_{shipment_id}"
+                                        )
+                                    
                                     update_notes = st.text_area(
                                         "Ghi chú cập nhật:",
                                         value='',
@@ -2601,12 +2673,16 @@ def show_dashboard():
                                                 # Cập nhật notes field với ghi chú mới nhất
                                                 final_notes = update_notes.strip()
                                             
+                                            # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
+                                            repairer_to_save = repairer_value if new_status == "Đang sửa chữa" else None
+                                            
                                             result = update_shipment(
                                                 shipment_id=shipment_id,
                                                 status=new_status,
                                                 notes=final_notes,
                                                 updated_by=current_user,
-                                                image_url=image_url
+                                                image_url=image_url,
+                                                repairer=repairer_to_save
                                             )
                                             
                                             if result['success']:
