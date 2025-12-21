@@ -189,6 +189,53 @@ def is_store_user():
     return username.startswith('cuahang')
 
 
+def is_kt_sr():
+    """
+    Check if current user is KT SR (Tài khoản tiếp nhận).
+    KT SR có thể tạo YCSC và cập nhật trạng thái: Đã nhận, Đã báo giá khách, Hoàn thành YCSC
+    
+    Returns:
+        bool: True if user is KT SR, False otherwise
+    """
+    username = get_current_user()
+    if not username:
+        return False
+    
+    # Check database first
+    try:
+        user = get_user(username)
+        if user and user.get('is_kt_sr'):
+            return True
+    except Exception as e:
+        print(f"Error checking KT SR from database: {e}")
+    
+    return False
+
+
+def is_kt_kho():
+    """
+    Check if current user is KT kho (Tài khoản Kỹ thuật).
+    KT kho có thể cập nhật trạng thái: Kiểm tra báo giá, Đang sửa chữa, 
+    Hoàn thành sửa chữa, Kiểm tra sau sửa, Chờ trả khách
+    
+    Returns:
+        bool: True if user is KT kho, False otherwise
+    """
+    username = get_current_user()
+    if not username:
+        return False
+    
+    # Check database first
+    try:
+        user = get_user(username)
+        if user and user.get('is_kt_kho'):
+            return True
+    except Exception as e:
+        print(f"Error checking KT kho from database: {e}")
+    
+    return False
+
+
 def get_store_name_from_username(username):
     """
     Get store name from username.
