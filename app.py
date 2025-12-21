@@ -2833,13 +2833,26 @@ def show_kt_kho_dashboard():
             seven_days_ago = pd.Timestamp.now() - pd.Timedelta(days=7)
             df_stuck = df_stuck[df_stuck['last_updated_parsed'] < seven_days_ago].copy()
     
+    # Tính tổng YCSC trong tháng hiện tại
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    first_day_of_month = datetime(now.year, now.month, 1)
+    
+    # Lọc phiếu trong tháng hiện tại (dựa trên sent_time)
+    df_filtered['sent_time_parsed'] = pd.to_datetime(df_filtered['sent_time'], errors='coerce')
+    df_month = df_filtered[df_filtered['sent_time_parsed'].notna() & 
+                          (df_filtered['sent_time_parsed'] >= first_day_of_month)].copy()
+    total_month = len(df_month)
+    
     # Hiển thị tổng số
-    col_total1, col_total2, col_total3 = st.columns(3)
+    col_total1, col_total2, col_total3, col_total4 = st.columns(4)
     with col_total1:
         st.metric("📊 Tổng số YCSC", len(df_filtered))
     with col_total2:
-        st.metric("⚙️ Đang xử lý", len(df_processing))
+        st.metric("📅 Trong tháng này", total_month)
     with col_total3:
+        st.metric("⚙️ Đang xử lý", len(df_processing))
+    with col_total4:
         st.metric("✅ Hoàn thành", len(df_completed))
     
     if len(df_stuck) > 0:
