@@ -80,7 +80,7 @@ from database import (
     auto_update_status_after_1hour, get_active_shipments, cleanup_audit_log
 )
 from qr_scanner import decode_qr_from_image
-from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username
+from auth import require_login, get_current_user, logout, is_admin, is_store_user, get_store_name_from_username, is_kt_sr, is_kt_kho
 try:
     from settings import STATUS_VALUES, REQUEST_TYPES  # type: ignore
 except ModuleNotFoundError:
@@ -1860,10 +1860,11 @@ def show_dashboard():
                     st.rerun()
             
             with col_filter2:
-                time_options = ['Hôm nay', 'Tuần này', 'Tháng này', 'Toàn bộ']
+                # Bộ lọc theo ngày theo sơ đồ: Trong vòng 3 ngày, 7 ngày, 30 ngày, Tháng này, Tháng trước
+                time_options = ['Trong vòng 3 ngày', 'Trong vòng 7 ngày', 'Trong vòng 30 ngày', 'Tháng này', 'Tháng trước', 'Toàn bộ']
                 time_key = f"time_filter_{request_type}"
                 if time_key not in st.session_state:
-                    st.session_state[time_key] = 'Hôm nay'
+                    st.session_state[time_key] = 'Toàn bộ'
                 
                 current_time_idx = 0
                 if st.session_state[time_key] in time_options:
@@ -1877,6 +1878,25 @@ def show_dashboard():
                 )
                 if selected_time != st.session_state[time_key]:
                     st.session_state[time_key] = selected_time
+                    page_key = f"dashboard_page_{request_type}"
+                    st.session_state[page_key] = 1
+                    st.rerun()
+            
+            with col_filter3:
+                # Hiển thị số YCSC tối đa: 10, 20, 50
+                items_per_page_key = f"items_per_page_{request_type}"
+                if items_per_page_key not in st.session_state:
+                    st.session_state[items_per_page_key] = 10
+                
+                items_per_page_options = [10, 20, 50]
+                selected_items_per_page = st.selectbox(
+                    "Hiển thị tối đa:",
+                    items_per_page_options,
+                    index=items_per_page_options.index(st.session_state[items_per_page_key]) if st.session_state[items_per_page_key] in items_per_page_options else 0,
+                    key=items_per_page_key
+                )
+                if selected_items_per_page != st.session_state[items_per_page_key]:
+                    st.session_state[items_per_page_key] = selected_items_per_page
                     page_key = f"dashboard_page_{request_type}"
                     st.session_state[page_key] = 1
                     st.rerun()
@@ -1905,32 +1925,76 @@ def show_dashboard():
             now = datetime.now()
             
             time_key = f"time_filter_{request_type}"
-            selected_time = st.session_state.get(time_key, 'Hôm nay')
+            selected_time = st.session_state.get(time_key, 'Toàn bộ')
             
-            if selected_time == 'Hôm nay':
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Lọc theo thời gian theo sơ đồ
+            if selected_time == 'Trong vòng 3 ngày':
+                three_days_ago = now - timedelta(days=3)
                 filtered_df = filtered_df[
-                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= today_start
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= three_days_ago
                 ]
-            elif selected_time == 'Tuần này':
-                week_start = now - timedelta(days=now.weekday())
-                week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif selected_time == 'Trong vòng 7 ngày':
+                seven_days_ago = now - timedelta(days=7)
                 filtered_df = filtered_df[
-                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= week_start
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= seven_days_ago
+                ]
+            elif selected_time == 'Trong vòng 30 ngày':
+                thirty_days_ago = now - timedelta(days=30)
+                filtered_df = filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= thirty_days_ago
                 ]
             elif selected_time == 'Tháng này':
                 month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 filtered_df = filtered_df[
                     pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= month_start
                 ]
+            elif selected_time == 'Tháng trước':
+                # Tháng trước: từ ngày 1 tháng trước đến ngày cuối tháng trước
+                if now.month == 1:
+                    prev_month_start = now.replace(year=now.year-1, month=12, day=1, hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    prev_month_start = now.replace(month=now.month-1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                prev_month_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=1)
+                filtered_df = filtered_df[
+                    (pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= prev_month_start) &
+                    (pd.to_datetime(filtered_df['sent_time'], errors='coerce') <= prev_month_end)
+                ]
             # 'Toàn bộ' không cần lọc thêm
+            
+            # Bảng nhỏ hiển thị số lượng YCSC theo thời gian: trong 3 ngày, 3-7 ngày, trên 7 ngày
+            st.markdown("### 📊 Thống kê theo thời gian")
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            
+            with col_stat1:
+                three_days_ago = now - timedelta(days=3)
+                count_3days = len(filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= three_days_ago
+                ])
+                st.metric("Trong 3 ngày", count_3days)
+            
+            with col_stat2:
+                seven_days_ago = now - timedelta(days=7)
+                count_3_7days = len(filtered_df[
+                    (pd.to_datetime(filtered_df['sent_time'], errors='coerce') >= seven_days_ago) &
+                    (pd.to_datetime(filtered_df['sent_time'], errors='coerce') < three_days_ago)
+                ])
+                st.metric("3-7 ngày", count_3_7days)
+            
+            with col_stat3:
+                count_over_7days = len(filtered_df[
+                    pd.to_datetime(filtered_df['sent_time'], errors='coerce') < seven_days_ago
+                ])
+                st.metric("Trên 7 ngày", count_over_7days)
+            
+            st.divider()
             
             # Sắp xếp theo last_updated (mới nhất trước)
             filtered_df['last_updated_parsed'] = pd.to_datetime(filtered_df['last_updated'], errors='coerce')
             filtered_df = filtered_df.sort_values('last_updated_parsed', ascending=False, na_position='last')
             
-            # Phân trang: 8 phiếu mỗi trang
-            items_per_page = 8
+            # Phân trang: lấy từ session state (10, 20, hoặc 50)
+            items_per_page_key = f"items_per_page_{request_type}"
+            items_per_page = st.session_state.get(items_per_page_key, 10)
             total_items = len(filtered_df)
             total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 1
             
@@ -2441,12 +2505,14 @@ def show_user_management():
         col_check1, col_check2 = st.columns(2)
         with col_check1:
             is_admin_flag = st.checkbox("Cấp quyền admin", value=False)
-        with col_check2:
-            # Nếu chọn cửa hàng thì tự động coi là tài khoản cửa hàng
             is_store_flag = st.checkbox("Cấp quyền cửa hàng", value=(store_choice != "Không gán"), help="Tài khoản này sẽ có quyền cửa hàng")
-            if store_choice != "Không gán" and not is_store_flag:
-                st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
-                is_store_flag = True
+        with col_check2:
+            is_kt_sr_flag = st.checkbox("KT SR (Tiếp nhận)", value=False, help="Tài khoản tiếp nhận - có thể tạo YCSC và cập nhật trạng thái")
+            is_kt_kho_flag = st.checkbox("KT kho (Kỹ thuật)", value=False, help="Tài khoản kỹ thuật - có thể cập nhật trạng thái sửa chữa")
+        
+        if store_choice != "Không gán" and not is_store_flag:
+            st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
+            is_store_flag = True
 
         submitted = st.form_submit_button("💾 Lưu tài khoản", type="primary")
         if submitted:
@@ -2458,7 +2524,7 @@ def show_user_management():
                 st.error("❌ Mật khẩu nhập lại không khớp")
             else:
                 assigned_store = None if store_choice == "Không gán" else store_choice
-                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, assigned_store)
+                result = set_user_password(username.strip(), password, is_admin_flag, is_store_flag, is_kt_sr_flag, is_kt_kho_flag, assigned_store)
                 if result['success']:
                     store_msg = f" (Cửa hàng: {assigned_store})" if assigned_store else ""
                     admin_msg = " (Admin)" if is_admin_flag else ""
@@ -2535,11 +2601,14 @@ def show_user_management():
             col_flags1, col_flags2 = st.columns(2)
             with col_flags1:
                 is_admin_flag_edit = st.checkbox("Cấp quyền admin", value=bool(user_info.get('is_admin')))
-            with col_flags2:
                 is_store_flag_edit = st.checkbox("Cấp quyền cửa hàng", value=bool(user_info.get('is_store')) or store_choice_edit != "Không gán")
-                if store_choice_edit != "Không gán" and not is_store_flag_edit:
-                    st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
-                    is_store_flag_edit = True
+            with col_flags2:
+                is_kt_sr_flag_edit = st.checkbox("KT SR (Tiếp nhận)", value=bool(user_info.get('is_kt_sr')), help="Tài khoản tiếp nhận - có thể tạo YCSC và cập nhật trạng thái")
+                is_kt_kho_flag_edit = st.checkbox("KT kho (Kỹ thuật)", value=bool(user_info.get('is_kt_kho')), help="Tài khoản kỹ thuật - có thể cập nhật trạng thái sửa chữa")
+            
+            if store_choice_edit != "Không gán" and not is_store_flag_edit:
+                st.warning("Đã chọn cửa hàng, tài khoản sẽ được coi là cửa hàng.")
+                is_store_flag_edit = True
 
             if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
                 pwd_to_save = new_password if new_password else user_info.get('password')
@@ -2549,6 +2618,8 @@ def show_user_management():
                     pwd_to_save,
                     is_admin=is_admin_flag_edit,
                     is_store=is_store_flag_edit,
+                    is_kt_sr=is_kt_sr_flag_edit,
+                    is_kt_kho=is_kt_kho_flag_edit,
                     store_name=assigned_store
                 )
                 if res['success']:
