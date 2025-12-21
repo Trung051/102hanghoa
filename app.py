@@ -2168,8 +2168,7 @@ def show_dashboard():
                                 
                                 st.divider()
                                 
-                                # Hiển thị quá trình cập nhật phiếu (Audit Log)
-                                st.markdown("### 📋 Quá trình cập nhật phiếu")
+                                # Hiển thị quá trình cập nhật phiếu (Audit Log) với expander để có thể thu gọn
                                 audit_logs = get_audit_log(limit=1000)  # Lấy tất cả log
                                 
                                 if not audit_logs.empty:
@@ -2181,62 +2180,67 @@ def show_dashboard():
                                         shipment_logs['timestamp_parsed'] = pd.to_datetime(shipment_logs['timestamp'], errors='coerce')
                                         shipment_logs = shipment_logs.sort_values('timestamp_parsed', ascending=False)
                                         
-                                        # Hiển thị từng log entry
-                                        for idx, log_row in shipment_logs.iterrows():
-                                            action = log_row.get('action', '')
-                                            old_value = log_row.get('old_value', '')
-                                            new_value = log_row.get('new_value', '')
-                                            changed_by = log_row.get('changed_by', '')
-                                            timestamp = log_row.get('timestamp', '')
-                                            
-                                            # Format timestamp
-                                            try:
-                                                time_display = pd.to_datetime(timestamp).strftime('%d/%m/%Y %H:%M:%S')
-                                            except:
-                                                time_display = str(timestamp)[:19] if timestamp else 'N/A'
-                                            
-                                            # Tạo icon và màu sắc theo action
-                                            if action == 'CREATED':
-                                                icon = "🆕"
-                                                color = "#10b981"  # Green
-                                                action_text = "Tạo phiếu"
-                                                change_text = f"Phiếu được tạo bởi **{changed_by}**"
-                                            elif action == 'STATUS_CHANGED':
-                                                icon = "🔄"
-                                                color = "#3b82f6"  # Blue
-                                                action_text = "Thay đổi trạng thái"
-                                                change_text = f"**{old_value}** → **{new_value}**"
-                                            elif action == 'UPDATED':
-                                                icon = "✏️"
-                                                color = "#f59e0b"  # Orange
-                                                action_text = "Cập nhật thông tin"
-                                                change_text = new_value if new_value else "Thông tin đã được cập nhật"
-                                            else:
-                                                icon = "📝"
-                                                color = "#6b7280"  # Gray
-                                                action_text = action
-                                                change_text = f"{old_value} → {new_value}" if old_value and new_value else (new_value or old_value or "Đã cập nhật")
-                                            
-                                            # Hiển thị log entry với styling
-                                            log_html = f"""
-                                            <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};">
-                                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
-                                                    <div style="font-weight: 600; color: {color};">
-                                                        {icon} {action_text}
+                                        # Đếm số lượng log entries
+                                        log_count = len(shipment_logs)
+                                        
+                                        # Tạo expander với số lượng log
+                                        with st.expander(f"📋 Quá trình cập nhật phiếu ({log_count} cập nhật)", expanded=False):
+                                            # Hiển thị từng log entry
+                                            for idx, log_row in shipment_logs.iterrows():
+                                                action = log_row.get('action', '')
+                                                old_value = log_row.get('old_value', '')
+                                                new_value = log_row.get('new_value', '')
+                                                changed_by = log_row.get('changed_by', '')
+                                                timestamp = log_row.get('timestamp', '')
+                                                
+                                                # Format timestamp
+                                                try:
+                                                    time_display = pd.to_datetime(timestamp).strftime('%d/%m/%Y %H:%M:%S')
+                                                except:
+                                                    time_display = str(timestamp)[:19] if timestamp else 'N/A'
+                                                
+                                                # Tạo icon và màu sắc theo action
+                                                if action == 'CREATED':
+                                                    icon = "🆕"
+                                                    color = "#10b981"  # Green
+                                                    action_text = "Tạo phiếu"
+                                                    change_text = f"Phiếu được tạo bởi **{changed_by}**"
+                                                elif action == 'STATUS_CHANGED':
+                                                    icon = "🔄"
+                                                    color = "#3b82f6"  # Blue
+                                                    action_text = "Thay đổi trạng thái"
+                                                    change_text = f"**{old_value}** → **{new_value}**"
+                                                elif action == 'UPDATED':
+                                                    icon = "✏️"
+                                                    color = "#f59e0b"  # Orange
+                                                    action_text = "Cập nhật thông tin"
+                                                    change_text = new_value if new_value else "Thông tin đã được cập nhật"
+                                                else:
+                                                    icon = "📝"
+                                                    color = "#6b7280"  # Gray
+                                                    action_text = action
+                                                    change_text = f"{old_value} → {new_value}" if old_value and new_value else (new_value or old_value or "Đã cập nhật")
+                                                
+                                                # Hiển thị log entry với styling
+                                                log_html = f"""
+                                                <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};">
+                                                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
+                                                        <div style="font-weight: 600; color: {color};">
+                                                            {icon} {action_text}
+                                                        </div>
+                                                        <div style="font-size: 0.875rem; color: #6b7280;">
+                                                            {time_display}
+                                                        </div>
                                                     </div>
-                                                    <div style="font-size: 0.875rem; color: #6b7280;">
-                                                        {time_display}
+                                                    <div style="color: #374151; margin-top: 4px;">
+                                                        {change_text}
+                                                    </div>
+                                                    <div style="font-size: 0.875rem; color: #6b7280; margin-top: 4px;">
+                                                        👤 Người thực hiện: <strong>{changed_by}</strong>
                                                     </div>
                                                 </div>
-                                                <div style="color: #374151; margin-top: 4px;">
-                                                    {change_text}
-                                                </div>
-                                                <div style="font-size: 0.875rem; color: #6b7280; margin-top: 4px;">
-                                                    👤 Người thực hiện: <strong>{changed_by}</strong>
-                                                </div>
-                                            </div>
-                                            """
-                                            st.markdown(log_html, unsafe_allow_html=True)
+                                                """
+                                                st.markdown(log_html, unsafe_allow_html=True)
                                     else:
                                         st.info("📭 Chưa có lịch sử cập nhật nào cho phiếu này")
                                 else:
