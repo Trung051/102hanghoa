@@ -1135,53 +1135,58 @@ def show_update_shipment_form(current_user, found_shipment):
             st.info(f"🏪 Cửa hàng: **{store_name}**")
         st.info(f"Trạng thái hiện tại: **{current_status}**")
         
-        # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
-        suppliers_df = get_suppliers()
-        status_options = STATUS_VALUES.copy()
-        
-        # Thêm các trạng thái "Gửi + tên NCC" nếu chưa có
-        for _, supplier_row in suppliers_df.iterrows():
-            supplier_name = supplier_row['name']
-            send_status = f"Gửi {supplier_name}"
-            if send_status not in status_options:
-                status_options.append(send_status)
-        
-        new_status = st.selectbox(
-            "Trạng thái mới:",
-            status_options,
-            index=status_options.index(current_status) if current_status in status_options else 0,
-            key="status_select"
-        )
-        
-        # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
-        repairer = None
-        if new_status == "Đang sửa chữa":
-            users_df = get_all_users()
-            user_list = users_df['username'].tolist() if not users_df.empty else [current_user]
-            current_repairer = found_shipment.get('repairer', current_user)
-            repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else 0
-            if current_user not in user_list:
-                user_list.insert(0, current_user)
-                repairer_idx = 0
+        # Kiểm tra: Nếu đã hoàn thành YCSC và không phải admin thì không cho cập nhật
+        if current_status == "Hoàn thành YCSC" and not is_admin():
+            st.warning("⚠️ Phiếu này đã hoàn thành YCSC. Chỉ Admin mới có thể chỉnh sửa.")
+            st.info("📋 Bạn chỉ có thể xem thông tin phiếu này.")
+        else:
+            # Tạo danh sách trạng thái động (bao gồm "Gửi + tên NCC")
+            suppliers_df = get_suppliers()
+            status_options = STATUS_VALUES.copy()
             
-            repairer = st.selectbox(
-                "Người sửa:",
-                user_list,
-                index=repairer_idx if current_repairer in user_list else user_list.index(current_user) if current_user in user_list else 0,
-                key="repairer_select"
+            # Thêm các trạng thái "Gửi + tên NCC" nếu chưa có
+            for _, supplier_row in suppliers_df.iterrows():
+                supplier_name = supplier_row['name']
+                send_status = f"Gửi {supplier_name}"
+                if send_status not in status_options:
+                    status_options.append(send_status)
+            
+            new_status = st.selectbox(
+                "Trạng thái mới:",
+                status_options,
+                index=status_options.index(current_status) if current_status in status_options else 0,
+                key="status_select"
             )
-        
-        notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
-        
-        if st.button("Cập Nhật", type="primary", key="update_btn"):
-            if new_status != current_status:
-                # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
-                # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
-                repairer_value = None
-                if new_status == "Đang sửa chữa":
-                    repairer_value = repairer if repairer else current_user
+            
+            # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+            repairer = None
+            if new_status == "Đang sửa chữa":
+                users_df = get_all_users()
+                user_list = users_df['username'].tolist() if not users_df.empty else [current_user]
+                current_repairer = found_shipment.get('repairer', current_user)
+                repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else 0
+                if current_user not in user_list:
+                    user_list.insert(0, current_user)
+                    repairer_idx = 0
                 
-                result = update_shipment(
+                repairer = st.selectbox(
+                    "Người sửa:",
+                    user_list,
+                    index=repairer_idx if current_repairer in user_list else user_list.index(current_user) if current_user in user_list else 0,
+                    key="repairer_select"
+                )
+            
+            notes = st.text_area("Ghi chú cập nhật:", key="update_notes")
+            
+            if st.button("Cập Nhật", type="primary", key="update_btn"):
+                if new_status != current_status:
+                    # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
+                    # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
+                    repairer_value = None
+                    if new_status == "Đang sửa chữa":
+                        repairer_value = repairer if repairer else current_user
+                    
+                    result = update_shipment(
                     shipment_id=found_shipment['id'],
                     status=new_status,
                     updated_by=current_user,
@@ -2564,33 +2569,38 @@ def show_dashboard():
                                 
                                 current_status = shipment.get('status', '')
                                 
-                                # Tạo danh sách trạng thái động
-                                status_options = STATUS_VALUES.copy()
-                                suppliers_df = get_suppliers()
-                                for _, supplier_row in suppliers_df.iterrows():
-                                    supplier_name = supplier_row['name']
-                                    send_status = f"Gửi {supplier_name}"
-                                    if send_status not in status_options:
-                                        status_options.append(send_status)
-                                
-                                current_status_idx = 0
-                                if current_status in status_options:
-                                    current_status_idx = status_options.index(current_status)
-                                
-                                col_update1, col_update2 = st.columns([2, 1])
-                                
-                                with col_update1:
-                                    new_status = st.selectbox(
+                                # Kiểm tra: Nếu đã hoàn thành YCSC và không phải admin thì không cho cập nhật
+                                if current_status == "Hoàn thành YCSC" and not is_admin():
+                                    st.warning("⚠️ Phiếu này đã hoàn thành YCSC. Chỉ Admin mới có thể chỉnh sửa.")
+                                    st.info("📋 Bạn chỉ có thể xem thông tin phiếu này.")
+                                else:
+                                    # Tạo danh sách trạng thái động
+                                    status_options = STATUS_VALUES.copy()
+                                    suppliers_df = get_suppliers()
+                                    for _, supplier_row in suppliers_df.iterrows():
+                                        supplier_name = supplier_row['name']
+                                        send_status = f"Gửi {supplier_name}"
+                                        if send_status not in status_options:
+                                            status_options.append(send_status)
+                                    
+                                    current_status_idx = 0
+                                    if current_status in status_options:
+                                        current_status_idx = status_options.index(current_status)
+                                    
+                                    col_update1, col_update2 = st.columns([2, 1])
+                                    
+                                    with col_update1:
+                                        new_status = st.selectbox(
                                         "Trạng thái mới:",
                                         status_options,
                                         index=current_status_idx,
                                         key=f"update_status_{shipment_id}"
                                     )
                                     
-                                    # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
-                                    repairer_value = None
-                                    if new_status == "Đang sửa chữa":
-                                        current_user_for_repairer = get_current_user()
+                                        # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+                                        repairer_value = None
+                                        if new_status == "Đang sửa chữa":
+                                            current_user_for_repairer = get_current_user()
                                         users_df = get_all_users()
                                         user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
                                         current_repairer = shipment.get('repairer', current_user_for_repairer)
@@ -2606,113 +2616,113 @@ def show_dashboard():
                                             key=f"repairer_select_{shipment_id}"
                                         )
                                     
-                                    update_notes = st.text_area(
-                                        "Ghi chú cập nhật:",
-                                        value='',
-                                        key=f"update_notes_{shipment_id}",
-                                        height=100,
-                                        placeholder="Nhập ghi chú mới của bạn..."
-                                    )
-                                    
-                                    uploaded_image_detail = st.file_uploader(
-                                        "Upload ảnh (tùy chọn)",
-                                        type=["png", "jpg", "jpeg"],
-                                        accept_multiple_files=True,
-                                        key=f"upload_image_detail_{shipment_id}"
-                                    )
-                                    
-                                    col_btn1, col_btn2 = st.columns(2)
-                                    with col_btn1:
-                                        if st.button("💾 Cập nhật", key=f"update_btn_{shipment_id}", type="primary", use_container_width=True):
-                                            current_user = get_current_user()
-                                            
-                                            image_url = shipment.get('image_url')
-                                            if uploaded_image_detail:
-                                                urls = []
-                                                for idx, f in enumerate(uploaded_image_detail, start=1):
-                                                    file_bytes = f.getvalue()
-                                                    mime = f.type or "image/jpeg"
-                                                    orig_name = f.name or "image.jpg"
-                                                    ext = ""
-                                                    if "." in orig_name:
-                                                        ext = orig_name.split(".")[-1]
-                                                    if not ext:
-                                                        ext = "jpg"
-                                                    sanitized_qr = shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
-                                                    sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
-                                                    drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
-                                                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                                    if upload_res['success']:
-                                                        urls.append(upload_res['url'])
-                                                    else:
-                                                        st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                                        st.stop()
-                                                if urls:
-                                                    if image_url:
-                                                        image_url = f"{image_url};{';'.join(urls)}"
-                                                    else:
-                                                        image_url = ";".join(urls)
-                                            
-                                            # Xử lý ghi chú: nếu có ghi chú mới, lưu vào history
-                                            final_notes = shipment.get('notes', '')
-                                            if update_notes.strip():
-                                                # Có ghi chú mới, lưu vào history
-                                                add_note_to_history(shipment_id, update_notes.strip(), current_user)
-                                                # Cập nhật notes field với ghi chú mới nhất
-                                                final_notes = update_notes.strip()
-                                            
-                                            # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
-                                            # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
-                                            repairer_to_save = None
-                                            if new_status == "Đang sửa chữa":
-                                                repairer_to_save = repairer_value if repairer_value else current_user
-                                            
-                                            result = update_shipment(
-                                                shipment_id=shipment_id,
-                                                status=new_status,
-                                                notes=final_notes,
-                                                updated_by=current_user,
-                                                image_url=image_url,
-                                                repairer=repairer_to_save
-                                            )
-                                            
-                                            if result['success']:
-                                                st.success("✅ Đã cập nhật thành công!")
-                                                updated = get_shipment_by_id(shipment_id)
-                                                if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
-                                                    res = notify_shipment_if_received(
-                                                        shipment_id,
-                                                        force=not shipment.get('telegram_message_id'),
-                                                        is_update_image=(uploaded_image_detail is not None)
-                                                    )
-                                                    if res and not res.get('success'):
-                                                        st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                                        update_notes = st.text_area(
+                                            "Ghi chú cập nhật:",
+                                            value='',
+                                            key=f"update_notes_{shipment_id}",
+                                            height=100,
+                                            placeholder="Nhập ghi chú mới của bạn..."
+                                        )
+                                        
+                                        uploaded_image_detail = st.file_uploader(
+                                            "Upload ảnh (tùy chọn)",
+                                            type=["png", "jpg", "jpeg"],
+                                            accept_multiple_files=True,
+                                            key=f"upload_image_detail_{shipment_id}"
+                                        )
+                                        
+                                        col_btn1, col_btn2 = st.columns(2)
+                                        with col_btn1:
+                                            if st.button("💾 Cập nhật", key=f"update_btn_{shipment_id}", type="primary", use_container_width=True):
+                                                current_user = get_current_user()
+                                                
+                                                image_url = shipment.get('image_url')
+                                                if uploaded_image_detail:
+                                                    urls = []
+                                                    for idx, f in enumerate(uploaded_image_detail, start=1):
+                                                        file_bytes = f.getvalue()
+                                                        mime = f.type or "image/jpeg"
+                                                        orig_name = f.name or "image.jpg"
+                                                        ext = ""
+                                                        if "." in orig_name:
+                                                            ext = orig_name.split(".")[-1]
+                                                        if not ext:
+                                                            ext = "jpg"
+                                                        sanitized_qr = shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                                        sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
+                                                        drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
+                                                        upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                                        if upload_res['success']:
+                                                            urls.append(upload_res['url'])
+                                                        else:
+                                                            st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                                            st.stop()
+                                                    if urls:
+                                                        if image_url:
+                                                            image_url = f"{image_url};{';'.join(urls)}"
+                                                        else:
+                                                            image_url = ";".join(urls)
+                                                
+                                                # Xử lý ghi chú: nếu có ghi chú mới, lưu vào history
+                                                final_notes = shipment.get('notes', '')
+                                                if update_notes.strip():
+                                                    # Có ghi chú mới, lưu vào history
+                                                    add_note_to_history(shipment_id, update_notes.strip(), current_user)
+                                                    # Cập nhật notes field với ghi chú mới nhất
+                                                    final_notes = update_notes.strip()
+                                                
+                                                # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
+                                                # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
+                                                repairer_to_save = None
+                                                if new_status == "Đang sửa chữa":
+                                                    repairer_to_save = repairer_value if repairer_value else current_user
+                                                
+                                                result = update_shipment(
+                                                    shipment_id=shipment_id,
+                                                    status=new_status,
+                                                    notes=final_notes,
+                                                    updated_by=current_user,
+                                                    image_url=image_url,
+                                                    repairer=repairer_to_save
+                                                )
+                                                
+                                                if result['success']:
+                                                    st.success("✅ Đã cập nhật thành công!")
+                                                    updated = get_shipment_by_id(shipment_id)
+                                                    if updated and updated.get('status') in ['Đã nhận', 'Chuyển kho', 'Gửi NCC sửa', 'Chuyển cửa hàng']:
+                                                        res = notify_shipment_if_received(
+                                                            shipment_id,
+                                                            force=not shipment.get('telegram_message_id'),
+                                                            is_update_image=(uploaded_image_detail is not None)
+                                                        )
+                                                        if res and not res.get('success'):
+                                                            st.warning(f"Không gửi được Telegram: {res.get('error')}")
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"❌ {result['error']}")
+                                        
+                                        with col_btn2:
+                                            if st.button("❌ Hủy", key=f"cancel_update_{shipment_id}", use_container_width=True):
                                                 st.rerun()
-                                            else:
-                                                st.error(f"❌ {result['error']}")
                                     
-                                    with col_btn2:
-                                        if st.button("❌ Hủy", key=f"cancel_update_{shipment_id}", use_container_width=True):
-                                            st.rerun()
-                                
-                                with col_update2:
-                                    st.write("**Thông tin hiện tại:**")
-                                    st.write(f"**Trạng thái:** {current_status}")
-                                    st.write(f"**Người tạo:** {shipment.get('created_by', '')}")
-                                    if shipment.get('updated_by'):
-                                        st.write(f"**Người cập nhật:** {shipment.get('updated_by', '')}")
-                                    if shipment.get('last_updated'):
-                                        st.write(f"**Cập nhật lúc:** {shipment.get('last_updated', '')[:16]}")
-                                
-                                # Hiển thị ảnh hiện có
-                                if shipment.get('image_url'):
-                                    st.markdown("**Ảnh hiện có:**")
-                                    urls = str(shipment.get('image_url', '')).split(';')
-                                    urls = [u for u in urls if u.strip()]
-                                    img_cols = st.columns(min(len(urls), 3))
-                                    for i, u in enumerate(urls):
-                                        with img_cols[i % len(img_cols)]:
-                                            display_drive_image(u, width=150, caption=f"Ảnh {i+1}")
+                                    with col_update2:
+                                        st.write("**Thông tin hiện tại:**")
+                                        st.write(f"**Trạng thái:** {current_status}")
+                                        st.write(f"**Người tạo:** {shipment.get('created_by', '')}")
+                                        if shipment.get('updated_by'):
+                                            st.write(f"**Người cập nhật:** {shipment.get('updated_by', '')}")
+                                        if shipment.get('last_updated'):
+                                            st.write(f"**Cập nhật lúc:** {shipment.get('last_updated', '')[:16]}")
+                                    
+                                    # Hiển thị ảnh hiện có
+                                    if shipment.get('image_url'):
+                                        st.markdown("**Ảnh hiện có:**")
+                                        urls = str(shipment.get('image_url', '')).split(';')
+                                        urls = [u for u in urls if u.strip()]
+                                        img_cols = st.columns(min(len(urls), 3))
+                                        for i, u in enumerate(urls):
+                                            with img_cols[i % len(img_cols)]:
+                                                display_drive_image(u, width=150, caption=f"Ảnh {i+1}")
                 
 
 
@@ -2984,128 +2994,134 @@ def _display_shipment_detail_kt_kho(shipment, shipment_id):
         with tab2:
             # Copy logic cập nhật từ dashboard
             current_status = shipment.get('status', '')
-            status_options = STATUS_VALUES.copy()
-            suppliers_df = get_suppliers()
-            for _, supplier_row in suppliers_df.iterrows():
-                supplier_name = supplier_row['name']
-                send_status = f"Gửi {supplier_name}"
-                if send_status not in status_options:
-                    status_options.append(send_status)
             
-            current_status_idx = 0
-            if current_status in status_options:
-                current_status_idx = status_options.index(current_status)
-            
-            col_update1, col_update2 = st.columns([2, 1])
-            
-            with col_update1:
-                new_status = st.selectbox(
-                    "Trạng thái mới:",
-                    status_options,
-                    index=current_status_idx,
-                    key=f"kt_kho_update_status_{shipment_id}"
-                )
+            # Kiểm tra: Nếu đã hoàn thành YCSC và không phải admin thì không cho cập nhật
+            if current_status == "Hoàn thành YCSC" and not is_admin():
+                st.warning("⚠️ Phiếu này đã hoàn thành YCSC. Chỉ Admin mới có thể chỉnh sửa.")
+                st.info("📋 Bạn chỉ có thể xem thông tin phiếu này.")
+            else:
+                status_options = STATUS_VALUES.copy()
+                suppliers_df = get_suppliers()
+                for _, supplier_row in suppliers_df.iterrows():
+                    supplier_name = supplier_row['name']
+                    send_status = f"Gửi {supplier_name}"
+                    if send_status not in status_options:
+                        status_options.append(send_status)
                 
-                # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
-                repairer_value = None
-                if new_status == "Đang sửa chữa":
-                    current_user_for_repairer = get_current_user()
-                    users_df = get_all_users()
-                    user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
-                    current_repairer = shipment.get('repairer', current_user_for_repairer)
-                    if current_user_for_repairer not in user_list:
-                        user_list.insert(0, current_user_for_repairer)
-                    
-                    repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
-                    
-                    repairer_value = st.selectbox(
-                        "Người sửa:",
-                        user_list,
-                        index=repairer_idx,
-                        key=f"kt_kho_repairer_select_{shipment_id}"
+                current_status_idx = 0
+                if current_status in status_options:
+                    current_status_idx = status_options.index(current_status)
+                
+                col_update1, col_update2 = st.columns([2, 1])
+                
+                with col_update1:
+                    new_status = st.selectbox(
+                        "Trạng thái mới:",
+                        status_options,
+                        index=current_status_idx,
+                        key=f"kt_kho_update_status_{shipment_id}"
                     )
-                
-                update_notes = st.text_area(
-                    "Ghi chú cập nhật:",
-                    value='',
-                    key=f"kt_kho_update_notes_{shipment_id}",
-                    height=100,
-                    placeholder="Nhập ghi chú mới của bạn..."
-                )
-                
-                uploaded_image_detail = st.file_uploader(
-                    "Upload ảnh (tùy chọn)",
-                    type=["png", "jpg", "jpeg"],
-                    accept_multiple_files=True,
-                    key=f"kt_kho_upload_image_{shipment_id}"
-                )
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("💾 Cập nhật", key=f"kt_kho_update_btn_{shipment_id}", type="primary", use_container_width=True):
-                        current_user = get_current_user()
+                    
+                    # Hiển thị selectbox "Người sửa" khi chọn "Đang sửa chữa"
+                    repairer_value = None
+                    if new_status == "Đang sửa chữa":
+                        current_user_for_repairer = get_current_user()
+                        users_df = get_all_users()
+                        user_list = users_df['username'].tolist() if not users_df.empty else [current_user_for_repairer]
+                        current_repairer = shipment.get('repairer', current_user_for_repairer)
+                        if current_user_for_repairer not in user_list:
+                            user_list.insert(0, current_user_for_repairer)
                         
-                        image_url = shipment.get('image_url')
-                        if uploaded_image_detail:
-                            urls = []
-                            for idx, f in enumerate(uploaded_image_detail, start=1):
-                                file_bytes = f.getvalue()
-                                mime = f.type or "image/jpeg"
-                                orig_name = f.name or "image.jpg"
-                                ext = ""
-                                if "." in orig_name:
-                                    ext = orig_name.split(".")[-1]
-                                if not ext:
-                                    ext = "jpg"
-                                sanitized_qr = shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
-                                sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
-                                drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
-                                upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
-                                if upload_res['success']:
-                                    urls.append(upload_res['url'])
-                                else:
-                                    st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
-                                    st.stop()
-                            if urls:
-                                if image_url:
-                                    image_url = f"{image_url};{';'.join(urls)}"
-                                else:
-                                    image_url = ";".join(urls)
+                        repairer_idx = user_list.index(current_repairer) if current_repairer in user_list else user_list.index(current_user_for_repairer) if current_user_for_repairer in user_list else 0
                         
-                        # Xử lý ghi chú
-                        final_notes = shipment.get('notes', '')
-                        if update_notes.strip():
-                            add_note_to_history(shipment_id, update_notes.strip(), current_user)
-                            final_notes = update_notes.strip()
-                        
-                        # Cập nhật repairer
-                        repairer_to_save = None
-                        if new_status == "Đang sửa chữa":
-                            repairer_to_save = repairer_value if repairer_value else current_user
-                        
-                        result = update_shipment(
-                            shipment_id=shipment_id,
-                            status=new_status,
-                            notes=final_notes,
-                            updated_by=current_user,
-                            image_url=image_url,
-                            repairer=repairer_to_save
+                        repairer_value = st.selectbox(
+                            "Người sửa:",
+                            user_list,
+                            index=repairer_idx,
+                            key=f"kt_kho_repairer_select_{shipment_id}"
                         )
-                        
-                        if result['success']:
-                            st.success("✅ Đã cập nhật thành công!")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['error']}")
+                    
+                    update_notes = st.text_area(
+                        "Ghi chú cập nhật:",
+                        value='',
+                        key=f"kt_kho_update_notes_{shipment_id}",
+                        height=100,
+                        placeholder="Nhập ghi chú mới của bạn..."
+                    )
+                    
+                    uploaded_image_detail = st.file_uploader(
+                        "Upload ảnh (tùy chọn)",
+                        type=["png", "jpg", "jpeg"],
+                        accept_multiple_files=True,
+                        key=f"kt_kho_upload_image_{shipment_id}"
+                    )
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("💾 Cập nhật", key=f"kt_kho_update_btn_{shipment_id}", type="primary", use_container_width=True):
+                            current_user = get_current_user()
+                            
+                            image_url = shipment.get('image_url')
+                            if uploaded_image_detail:
+                                urls = []
+                                for idx, f in enumerate(uploaded_image_detail, start=1):
+                                    file_bytes = f.getvalue()
+                                    mime = f.type or "image/jpeg"
+                                    orig_name = f.name or "image.jpg"
+                                    ext = ""
+                                    if "." in orig_name:
+                                        ext = orig_name.split(".")[-1]
+                                    if not ext:
+                                        ext = "jpg"
+                                    sanitized_qr = shipment.get('qr_code', '').strip().replace(" ", "_").replace("/", "_") or "qr_image"
+                                    sanitized_status = new_status.replace(" ", "_").replace("/", "_") if new_status else "unknown"
+                                    drive_filename = f"{sanitized_qr}_{sanitized_status}_{idx}.{ext}"
+                                    upload_res = upload_file_to_drive(file_bytes, drive_filename, mime)
+                                    if upload_res['success']:
+                                        urls.append(upload_res['url'])
+                                    else:
+                                        st.error(f"❌ Upload ảnh {idx} thất bại: {upload_res['error']}")
+                                        st.stop()
+                                if urls:
+                                    if image_url:
+                                        image_url = f"{image_url};{';'.join(urls)}"
+                                    else:
+                                        image_url = ";".join(urls)
+                            
+                            # Xử lý ghi chú
+                            final_notes = shipment.get('notes', '')
+                            if update_notes.strip():
+                                add_note_to_history(shipment_id, update_notes.strip(), current_user)
+                                final_notes = update_notes.strip()
+                            
+                            # Cập nhật repairer
+                            repairer_to_save = None
+                            if new_status == "Đang sửa chữa":
+                                repairer_to_save = repairer_value if repairer_value else current_user
+                            
+                            result = update_shipment(
+                                shipment_id=shipment_id,
+                                status=new_status,
+                                notes=final_notes,
+                                updated_by=current_user,
+                                image_url=image_url,
+                                repairer=repairer_to_save
+                            )
+                            
+                            if result['success']:
+                                st.success("✅ Đã cập nhật thành công!")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {result['error']}")
+                    
+                        with col_btn2:
+                            if st.button("❌ Hủy", key=f"kt_kho_cancel_{shipment_id}", use_container_width=True):
+                                st.rerun()
                 
-                with col_btn2:
-                    if st.button("❌ Hủy", key=f"kt_kho_cancel_{shipment_id}", use_container_width=True):
-                        st.rerun()
-            
-            with col_update2:
-                st.write("**Thông tin hiện tại:**")
-                st.write(f"**Trạng thái:** {current_status}")
-                st.write(f"**Người tạo:** {shipment.get('created_by', '')}")
+                    with col_update2:
+                        st.write("**Thông tin hiện tại:**")
+                        st.write(f"**Trạng thái:** {current_status}")
+                        st.write(f"**Người tạo:** {shipment.get('created_by', '')}")
 
 
 def show_settings_screen():
