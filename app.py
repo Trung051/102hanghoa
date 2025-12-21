@@ -2046,6 +2046,7 @@ def show_dashboard():
                     if shipment:
                         # Lấy thông tin cơ bản
                         qr_code = str(shipment.get('qr_code', ''))
+                        imei = str(shipment.get('imei', 'Chưa có'))
                         status = str(shipment.get('status', ''))
                         
                         # Thời gian
@@ -2064,8 +2065,8 @@ def show_dashboard():
                         # Nơi tiếp nhận (reception_location hoặc store_name)
                         reception_location = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
                         
-                        # Tạo label cho expander với thông tin cơ bản
-                        expander_label = f"📋 {qr_code} | {time_str} | {reception_location} | {status}"
+                        # Tạo label cho expander với thông tin cơ bản (thêm IMEI)
+                        expander_label = f"📋 {qr_code} | IMEI: {imei} | {time_str} | {status}"
                         
                         # Tạo expander cho mỗi phiếu với thông tin cơ bản
                         with st.expander(
@@ -2075,13 +2076,17 @@ def show_dashboard():
                             # Hiển thị thông tin cơ bản: Mã yêu cầu, Thời gian, Nơi tiếp nhận, Trạng thái
                             st.markdown("### Thông tin cơ bản")
                             
-                            # Hiển thị dạng bảng đẹp
+                            # Hiển thị dạng bảng đẹp (thêm IMEI)
                             basic_info_html = f"""
                             <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5e7eb;">
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Mã yêu cầu</div>
                                         <div style="font-size: 1rem; font-weight: 700; color: #111827;">{html.escape(qr_code)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">IMEI</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #059669;">{html.escape(imei)}</div>
                                     </div>
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Thời gian</div>
@@ -2108,11 +2113,16 @@ def show_dashboard():
                             with tab1:
                                 st.write("**Thông tin chi tiết:**")
                                 
-                                # Hàng 1: Mã yêu cầu | Thời gian
+                                # Hàng 1: Mã yêu cầu | IMEI
                                 col_row1_1, col_row1_2 = st.columns(2)
                                 with col_row1_1:
                                     st.write(f"**Mã yêu cầu:** {shipment.get('qr_code', '')}")
                                 with col_row1_2:
+                                    st.write(f"**IMEI:** {shipment.get('imei', 'Chưa có')}")
+                                
+                                # Hàng 2: Thời gian | Ngày cập nhật
+                                col_row2_1, col_row2_2 = st.columns(2)
+                                with col_row2_1:
                                     time_display = ''
                                     if pd.notna(shipment.get('sent_time')):
                                         try:
@@ -2120,22 +2130,20 @@ def show_dashboard():
                                         except:
                                             time_display = str(shipment.get('sent_time', ''))[:16]
                                     st.write(f"**Thời gian:** {time_display}")
-                                
-                                # Hàng 2: Người nhận | Ngày cập nhật
-                                col_row2_1, col_row2_2 = st.columns(2)
-                                with col_row2_1:
-                                    st.write(f"**Người nhận:** {shipment.get('created_by', '')}")
                                 with col_row2_2:
                                     update_date = shipment.get('last_updated', '')[:16] if shipment.get('last_updated') else 'Chưa có'
                                     st.write(f"**Ngày cập nhật:** {update_date}")
                                 
-                                # Hàng 3: Nơi tiếp nhận | Trạng thái
+                                # Hàng 3: Người nhận | Nơi tiếp nhận
                                 col_row3_1, col_row3_2 = st.columns(2)
                                 with col_row3_1:
+                                    st.write(f"**Người nhận:** {shipment.get('created_by', '')}")
+                                with col_row3_2:
                                     reception_location_display = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
                                     st.write(f"**Nơi tiếp nhận:** {reception_location_display}")
-                                with col_row3_2:
-                                    st.write(f"**Trạng thái:** {shipment.get('status', '')}")
+                                
+                                # Hàng 4: Trạng thái
+                                st.write(f"**Trạng thái:** {shipment.get('status', '')}")
                                 
                                 st.divider()
                                 
