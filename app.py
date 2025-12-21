@@ -1423,9 +1423,6 @@ def show_manage_shipments():
 
     with st.expander("📂 Tạo nhiều phiếu từ Excel", expanded=False):
         st.write("Upload file Excel (bỏ qua header, đọc từ hàng 2) với các cột: B=Mã yêu cầu(QR), Z=Tên hàng (Tên thiết bị), AF=Serial/IMEI, AI=Ghi chú (Lỗi/Tình trạng).")
-        suppliers_df = get_suppliers()
-        supplier_options = ["Chưa chọn"] + (suppliers_df['name'].tolist() if not suppliers_df.empty else [])
-        bulk_supplier = st.selectbox("Nhà cung cấp áp dụng", supplier_options, key="bulk_supplier")
         # Loại yêu cầu (bắt buộc)
         bulk_request_type = st.selectbox(
             "Loại yêu cầu *:",
@@ -1479,7 +1476,7 @@ def show_manage_shipments():
                                 imei=imei_val,
                                 device_name=device_val,
                                 capacity=cap_val,
-                                supplier=bulk_supplier if bulk_supplier != "Chưa chọn" else "Chưa chọn",
+                                supplier="Chưa chọn",
                                 created_by=current_user,
                                 notes=None,
                                 status="Đã nhận",
