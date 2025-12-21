@@ -2166,6 +2166,84 @@ def show_dashboard():
                                 item_df = pd.DataFrame(item_table_data)
                                 st.dataframe(item_df, use_container_width=True, hide_index=True)
                                 
+                                st.divider()
+                                
+                                # Hiển thị quá trình cập nhật phiếu (Audit Log)
+                                st.markdown("### 📋 Quá trình cập nhật phiếu")
+                                audit_logs = get_audit_log(limit=1000)  # Lấy tất cả log
+                                
+                                if not audit_logs.empty:
+                                    # Lọc log theo shipment_id
+                                    shipment_logs = audit_logs[audit_logs['shipment_id'] == shipment_id].copy()
+                                    
+                                    if not shipment_logs.empty:
+                                        # Sắp xếp theo thời gian (mới nhất trước)
+                                        shipment_logs['timestamp_parsed'] = pd.to_datetime(shipment_logs['timestamp'], errors='coerce')
+                                        shipment_logs = shipment_logs.sort_values('timestamp_parsed', ascending=False)
+                                        
+                                        # Hiển thị từng log entry
+                                        for idx, log_row in shipment_logs.iterrows():
+                                            action = log_row.get('action', '')
+                                            old_value = log_row.get('old_value', '')
+                                            new_value = log_row.get('new_value', '')
+                                            changed_by = log_row.get('changed_by', '')
+                                            timestamp = log_row.get('timestamp', '')
+                                            
+                                            # Format timestamp
+                                            try:
+                                                time_display = pd.to_datetime(timestamp).strftime('%d/%m/%Y %H:%M:%S')
+                                            except:
+                                                time_display = str(timestamp)[:19] if timestamp else 'N/A'
+                                            
+                                            # Tạo icon và màu sắc theo action
+                                            if action == 'CREATED':
+                                                icon = "🆕"
+                                                color = "#10b981"  # Green
+                                                action_text = "Tạo phiếu"
+                                                change_text = f"Phiếu được tạo bởi **{changed_by}**"
+                                            elif action == 'STATUS_CHANGED':
+                                                icon = "🔄"
+                                                color = "#3b82f6"  # Blue
+                                                action_text = "Thay đổi trạng thái"
+                                                change_text = f"**{old_value}** → **{new_value}**"
+                                            elif action == 'UPDATED':
+                                                icon = "✏️"
+                                                color = "#f59e0b"  # Orange
+                                                action_text = "Cập nhật thông tin"
+                                                change_text = new_value if new_value else "Thông tin đã được cập nhật"
+                                            else:
+                                                icon = "📝"
+                                                color = "#6b7280"  # Gray
+                                                action_text = action
+                                                change_text = f"{old_value} → {new_value}" if old_value and new_value else (new_value or old_value or "Đã cập nhật")
+                                            
+                                            # Hiển thị log entry với styling
+                                            log_html = f"""
+                                            <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid {color};">
+                                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
+                                                    <div style="font-weight: 600; color: {color};">
+                                                        {icon} {action_text}
+                                                    </div>
+                                                    <div style="font-size: 0.875rem; color: #6b7280;">
+                                                        {time_display}
+                                                    </div>
+                                                </div>
+                                                <div style="color: #374151; margin-top: 4px;">
+                                                    {change_text}
+                                                </div>
+                                                <div style="font-size: 0.875rem; color: #6b7280; margin-top: 4px;">
+                                                    👤 Người thực hiện: <strong>{changed_by}</strong>
+                                                </div>
+                                            </div>
+                                            """
+                                            st.markdown(log_html, unsafe_allow_html=True)
+                                    else:
+                                        st.info("📭 Chưa có lịch sử cập nhật nào cho phiếu này")
+                                else:
+                                    st.info("📭 Chưa có lịch sử cập nhật nào")
+                                
+                                st.divider()
+                                
                                 # Hiển thị ảnh nếu có
                                 if shipment.get('image_url'):
                                     st.markdown("### Ảnh đính kèm")
@@ -2175,6 +2253,61 @@ def show_dashboard():
                                     for i, u in enumerate(urls):
                                         with img_cols[i % len(img_cols)]:
                                             display_drive_image(u, width=200, caption=f"Ảnh {i+1}")
+                                
+                                # Hiển thị thông tin các trường mới theo sơ đồ
+                                st.divider()
+                                st.markdown("### 📊 Thông tin chi tiết theo sơ đồ")
+                                
+                                col_detail1, col_detail2 = st.columns(2)
+                                
+                                with col_detail1:
+                                    st.markdown("**Thông tin tiếp nhận:**")
+                                    if shipment.get('device_status_on_reception'):
+                                        st.write(f"• Tình trạng thiết bị lúc nhận: {shipment.get('device_status_on_reception')}")
+                                    if shipment.get('quotation_notes'):
+                                        st.write(f"• Ghi chú báo giá: {shipment.get('quotation_notes')}")
+                                    if shipment.get('notes'):
+                                        st.write(f"• Ghi chú nhận máy: {shipment.get('notes')}")
+                                
+                                with col_detail2:
+                                    st.markdown("**Thông tin sửa chữa:**")
+                                    if shipment.get('repairer'):
+                                        st.write(f"• Người sửa: {shipment.get('repairer')}")
+                                    if shipment.get('repair_start_date'):
+                                        try:
+                                            repair_start = pd.to_datetime(shipment.get('repair_start_date')).strftime('%d/%m/%Y %H:%M')
+                                            st.write(f"• Ngày bắt đầu sửa: {repair_start}")
+                                        except:
+                                            st.write(f"• Ngày bắt đầu sửa: {shipment.get('repair_start_date')}")
+                                    if shipment.get('repair_completion_date'):
+                                        try:
+                                            repair_end = pd.to_datetime(shipment.get('repair_completion_date')).strftime('%d/%m/%Y %H:%M')
+                                            st.write(f"• Ngày hoàn thành sửa: {repair_end}")
+                                        except:
+                                            st.write(f"• Ngày hoàn thành sửa: {shipment.get('repair_completion_date')}")
+                                    if shipment.get('repair_notes'):
+                                        st.write(f"• Ghi chú sửa máy: {shipment.get('repair_notes')}")
+                                
+                                if shipment.get('quality_check_notes'):
+                                    st.markdown("**Kiểm tra chất lượng:**")
+                                    st.write(f"• Ghi chú kiểm tra: {shipment.get('quality_check_notes')}")
+                                
+                                if shipment.get('ycsc_completion_date'):
+                                    st.markdown("**Hoàn thành YCSC:**")
+                                    try:
+                                        ycsc_complete = pd.to_datetime(shipment.get('ycsc_completion_date')).strftime('%d/%m/%Y %H:%M')
+                                        st.write(f"• Ngày hoàn thành YCSC: {ycsc_complete}")
+                                    except:
+                                        st.write(f"• Ngày hoàn thành YCSC: {shipment.get('ycsc_completion_date')}")
+                                
+                                if shipment.get('repair_image_url'):
+                                    st.markdown("**Hình ảnh sửa máy:**")
+                                    repair_urls = str(shipment.get('repair_image_url', '')).split(';')
+                                    repair_urls = [u for u in repair_urls if u.strip()]
+                                    repair_img_cols = st.columns(min(len(repair_urls), 3))
+                                    for i, u in enumerate(repair_urls):
+                                        with repair_img_cols[i % len(repair_img_cols)]:
+                                            display_drive_image(u, width=200, caption=f"Ảnh sửa {i+1}")
                             
                             with tab2:
                                 st.markdown("### Cập nhật phiếu")
