@@ -1812,8 +1812,19 @@ def show_dashboard():
     if 'dashboard_search_mode' not in st.session_state:
         st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
     
-    # Cửa sổ tìm kiếm gọn gàng
+    # Cửa sổ tìm kiếm gọn gàng - buttons thẳng hàng và bằng nhau
     with st.container():
+        # CSS để đảm bảo buttons thẳng hàng
+        st.markdown("""
+        <style>
+        div[data-testid="column"]:nth-of-type(3) button,
+        div[data-testid="column"]:nth-of-type(4) button {
+            height: 38px;
+            margin-top: 0px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         col_search1, col_search2, col_search3, col_search4 = st.columns([3, 1.5, 1, 1])
         
         with col_search1:
@@ -1835,14 +1846,12 @@ def show_dashboard():
             )
         
         with col_search3:
-            st.write("")  # Spacer
             if st.button("Tìm", use_container_width=True, key='dashboard_search_btn', type="secondary"):
                 st.session_state['dashboard_search_query'] = search_query.strip()
                 st.session_state['dashboard_search_mode'] = search_mode
                 st.rerun()
         
         with col_search4:
-            st.write("")  # Spacer
             if st.button("Xóa", use_container_width=True, key='dashboard_clear_btn', type="secondary"):
                 st.session_state['dashboard_search_query'] = ''
                 st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
