@@ -83,6 +83,26 @@ def init_database():
                 WHERE last_updated IS NULL
             """)
         
+        # Thêm các trường mới theo sơ đồ hệ thống
+        if "device_status_on_reception" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN device_status_on_reception TEXT")
+        if "repairer" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN repairer TEXT")
+        if "repair_start_date" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN repair_start_date TIMESTAMP")
+        if "repair_completion_date" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN repair_completion_date TIMESTAMP")
+        if "ycsc_completion_date" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN ycsc_completion_date TIMESTAMP")
+        if "repair_notes" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN repair_notes TEXT")
+        if "quality_check_notes" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN quality_check_notes TEXT")
+        if "repair_image_url" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN repair_image_url TEXT")
+        if "quotation_notes" not in cols:
+            cursor.execute("ALTER TABLE ShipmentDetails ADD COLUMN quotation_notes TEXT")
+        
         # Create Suppliers table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS Suppliers (
@@ -115,17 +135,23 @@ def init_database():
             password TEXT NOT NULL,
             is_admin BOOLEAN DEFAULT 0,
             is_store BOOLEAN DEFAULT 0,
+            is_kt_sr BOOLEAN DEFAULT 0,
+            is_kt_kho BOOLEAN DEFAULT 0,
             store_name TEXT
         )
         ''')
         
-        # Migration: Add is_store column if it doesn't exist
+        # Migration: Add columns if they don't exist
         cursor.execute("PRAGMA table_info(Users)")
         cols = [row[1] for row in cursor.fetchall()]
         if "is_store" not in cols:
             cursor.execute("ALTER TABLE Users ADD COLUMN is_store BOOLEAN DEFAULT 0")
         if "store_name" not in cols:
             cursor.execute("ALTER TABLE Users ADD COLUMN store_name TEXT")
+        if "is_kt_sr" not in cols:
+            cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_sr BOOLEAN DEFAULT 0")
+        if "is_kt_kho" not in cols:
+            cursor.execute("ALTER TABLE Users ADD COLUMN is_kt_kho BOOLEAN DEFAULT 0")
         
         # Create TransferSlips table (Phiếu chuyển)
         cursor.execute('''
@@ -230,7 +256,7 @@ def init_database():
         conn.close()
 
 
-def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None, request_type=None, reception_location=None):
+def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, notes=None, image_url=None, status=None, store_name=None, request_type=None, reception_location=None, device_status_on_reception=None, quotation_notes=None):
     """
     Save new shipment to database
     
@@ -257,8 +283,8 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             request_type = 'Sửa chữa dịch vụ'  # Default
         cursor.execute('''
         INSERT INTO ShipmentDetails 
-        (qr_code, imei, device_name, capacity, supplier, status, request_type, created_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (qr_code, imei, device_name, capacity, supplier, status, request_type, created_by, notes, image_url, telegram_message_id, store_name, reception_location, device_status_on_reception, quotation_notes, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ''', (
             qr_code,
             imei,
@@ -272,7 +298,9 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
             image_url,
             None,
             store_name,
-            reception_location
+            reception_location,
+            device_status_on_reception,
+            quotation_notes
         ))
         
         conn.commit()
@@ -300,7 +328,9 @@ def save_shipment(qr_code, imei, device_name, capacity, supplier, created_by, no
 
 def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capacity=None, 
                    supplier=None, status=None, notes=None, updated_by=None, image_url=None,
-                   telegram_message_id=None, store_name=None, request_type=None, completed_time=None, reception_location=None):
+                   telegram_message_id=None, store_name=None, request_type=None, completed_time=None, reception_location=None,
+                   device_status_on_reception=None, repairer=None, repair_start_date=None, repair_completion_date=None,
+                   ycsc_completion_date=None, repair_notes=None, quality_check_notes=None, repair_image_url=None, quotation_notes=None):
     """
     Update shipment information
     
@@ -373,9 +403,38 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if completed_time is not None:
             updates.append('completed_time = ?')
             values.append(completed_time)
-        elif status == 'Hoàn thành':
-            # Auto-set completed_time when status becomes "Hoàn thành"
+        elif status == 'Hoàn thành YCSC':
+            # Auto-set completed_time when status becomes "Hoàn thành YCSC"
             updates.append('completed_time = CURRENT_TIMESTAMP')
+        
+        # Các trường mới theo sơ đồ
+        if device_status_on_reception is not None:
+            updates.append('device_status_on_reception = ?')
+            values.append(device_status_on_reception)
+        if repairer is not None:
+            updates.append('repairer = ?')
+            values.append(repairer)
+        if repair_start_date is not None:
+            updates.append('repair_start_date = ?')
+            values.append(repair_start_date)
+        if repair_completion_date is not None:
+            updates.append('repair_completion_date = ?')
+            values.append(repair_completion_date)
+        if ycsc_completion_date is not None:
+            updates.append('ycsc_completion_date = ?')
+            values.append(ycsc_completion_date)
+        if repair_notes is not None:
+            updates.append('repair_notes = ?')
+            values.append(repair_notes)
+        if quality_check_notes is not None:
+            updates.append('quality_check_notes = ?')
+            values.append(quality_check_notes)
+        if repair_image_url is not None:
+            updates.append('repair_image_url = ?')
+            values.append(repair_image_url)
+        if quotation_notes is not None:
+            updates.append('quotation_notes = ?')
+            values.append(quotation_notes)
         
         # Luôn cập nhật last_updated khi có thay đổi
         if updates:
@@ -456,6 +515,15 @@ def update_shipment_status(qr_code, new_status, updated_by, notes=None, image_ur
         if new_status == 'Đã nhận':
             update_fields['received_time'] = datetime.now().isoformat()
         
+        # Logic tự động cập nhật ngày khi đổi trạng thái theo sơ đồ
+        if new_status == 'Đang sửa chữa':
+            update_fields['repair_start_date'] = datetime.now().isoformat()
+        elif new_status == 'Hoàn thành sửa chữa':
+            update_fields['repair_completion_date'] = datetime.now().isoformat()
+        elif new_status == 'Hoàn thành YCSC':
+            update_fields['ycsc_completion_date'] = datetime.now().isoformat()
+            update_fields['completed_time'] = datetime.now().isoformat()
+        
         # Update notes if provided
         if notes:
             update_fields['notes'] = notes
@@ -518,7 +586,8 @@ def get_shipment_by_id(shipment_id):
     try:
         cursor.execute('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated
+               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated,
+               device_status_on_reception, repairer, repair_start_date, repair_completion_date, ycsc_completion_date, repair_notes, quality_check_notes, repair_image_url, quotation_notes
         FROM ShipmentDetails
         WHERE id = ?
         ''', (shipment_id,))
@@ -552,7 +621,8 @@ def get_shipment_by_qr_code(qr_code):
     try:
         cursor.execute('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, sent_time, received_time, created_by, updated_by, notes, image_url, telegram_message_id
+               status, request_type, sent_time, received_time, completed_time, created_by, updated_by, notes, image_url, telegram_message_id, store_name, reception_location, last_updated,
+               device_status_on_reception, repairer, repair_start_date, repair_completion_date, ycsc_completion_date, repair_notes, quality_check_notes, repair_image_url, quotation_notes
         FROM ShipmentDetails
         WHERE qr_code = ?
         ''', (qr_code,))
@@ -578,7 +648,7 @@ def get_user(username):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        SELECT username, password, is_admin, is_store, store_name
+        SELECT username, password, is_admin, is_store, is_kt_sr, is_kt_kho, store_name
         FROM Users
         WHERE username = ?
         ''', (username,))
@@ -589,7 +659,9 @@ def get_user(username):
                 'password': result[1],
                 'is_admin': bool(result[2]),
                 'is_store': bool(result[3]) if len(result) > 3 else False,
-                'store_name': result[4] if len(result) > 4 else None
+                'is_kt_sr': bool(result[4]) if len(result) > 4 else False,
+                'is_kt_kho': bool(result[5]) if len(result) > 5 else False,
+                'store_name': result[6] if len(result) > 6 else None
             }
         return None
     except Exception as e:
@@ -599,7 +671,7 @@ def get_user(username):
         conn.close()
 
 
-def set_user_password(username, password, is_admin=False, is_store=False, store_name=None):
+def set_user_password(username, password, is_admin=False, is_store=False, is_kt_sr=False, is_kt_kho=False, store_name=None):
     """
     Create or update user password.
     Uses UPSERT to avoid duplicates.
@@ -609,19 +681,24 @@ def set_user_password(username, password, is_admin=False, is_store=False, store_
         password: Password
         is_admin: Whether user is admin (default: False)
         is_store: Whether user is a store user (default: False)
+        is_kt_sr: Whether user is KT SR (default: False)
+        is_kt_kho: Whether user is KT kho (default: False)
+        store_name: Store name (optional)
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        INSERT INTO Users (username, password, is_admin, is_store, store_name)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO Users (username, password, is_admin, is_store, is_kt_sr, is_kt_kho, store_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(username) DO UPDATE SET
             password = excluded.password,
             is_admin = excluded.is_admin,
             is_store = excluded.is_store,
+            is_kt_sr = excluded.is_kt_sr,
+            is_kt_kho = excluded.is_kt_kho,
             store_name = excluded.store_name
-        ''', (username, password, 1 if is_admin else 0, 1 if is_store else 0, store_name))
+        ''', (username, password, 1 if is_admin else 0, 1 if is_store else 0, 1 if is_kt_sr else 0, 1 if is_kt_kho else 0, store_name))
         conn.commit()
         return {'success': True, 'error': None}
     except Exception as e:
@@ -636,7 +713,7 @@ def get_all_users():
     conn = get_connection()
     try:
         df = pd.read_sql_query('''
-        SELECT username, password, is_admin, is_store, store_name
+        SELECT username, password, is_admin, is_store, is_kt_sr, is_kt_kho, store_name
         FROM Users
         ORDER BY username
         ''', conn)
@@ -744,7 +821,8 @@ def get_all_shipments():
         df = pd.read_sql_query('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
                status, request_type, store_name, reception_location, sent_time, received_time, completed_time, 
-               created_by, updated_by, notes, image_url, telegram_message_id, last_updated
+               created_by, updated_by, notes, image_url, telegram_message_id, last_updated,
+               device_status_on_reception, repairer, repair_start_date, repair_completion_date, ycsc_completion_date, repair_notes, quality_check_notes, repair_image_url, quotation_notes
         FROM ShipmentDetails
         ORDER BY sent_time DESC
         ''', conn)
@@ -792,8 +870,9 @@ def get_shipments_by_status(status):
     try:
         df = pd.read_sql_query('''
         SELECT id, qr_code, imei, device_name, capacity, supplier, 
-               status, request_type, store_name, sent_time, received_time, completed_time,
-               created_by, updated_by, notes, image_url, telegram_message_id, last_updated
+               status, request_type, store_name, reception_location, sent_time, received_time, completed_time,
+               created_by, updated_by, notes, image_url, telegram_message_id, last_updated,
+               device_status_on_reception, repairer, repair_start_date, repair_completion_date, ycsc_completion_date, repair_notes, quality_check_notes, repair_image_url, quotation_notes
         FROM ShipmentDetails
         WHERE status = ?
         ORDER BY sent_time DESC
