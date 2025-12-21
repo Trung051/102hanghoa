@@ -69,8 +69,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import (
-    add_note_to_history,
-    get_notes_history,
     init_database, save_shipment, update_shipment_status, update_shipment,
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
