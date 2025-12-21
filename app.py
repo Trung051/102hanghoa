@@ -69,8 +69,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import (
-    add_note_to_history,
-    get_notes_history,
     init_database, save_shipment, update_shipment_status, update_shipment,
     get_all_shipments, get_shipment_by_qr_code, get_suppliers, get_audit_log,
     get_all_suppliers, add_supplier, update_supplier, delete_supplier,
@@ -2278,25 +2276,25 @@ def show_dashboard():
                             tab1, tab2 = st.tabs(["📋 Thông tin", "✏️ Cập nhật"])
                             
                             with tab1:
-                                st.write("**Thông tin chi tiết:**")
-                                
-                                # Hiển thị người sửa nổi bật nếu có
+                                # Hiển thị người sửa ở góc trên phải nếu có
                                 if shipment.get('repairer'):
-                                    st.markdown(f"""
-                                    <div style="
-                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                        color: white;
-                                        padding: 16px 20px;
-                                        border-radius: 10px;
-                                        margin: 12px 0 20px 0;
-                                        font-weight: 700;
-                                        font-size: 18px;
-                                        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-                                        text-align: center;
-                                    ">
-                                        👤 Người sửa: <span style="font-size: 20px; text-transform: uppercase;">{shipment.get('repairer')}</span>
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                                    col_repairer_left, col_repairer_right = st.columns([1, 1])
+                                    with col_repairer_left:
+                                        st.write("**Thông tin chi tiết:**")
+                                    with col_repairer_right:
+                                        st.markdown(f"""
+                                        <div style="
+                                            text-align: right;
+                                            font-weight: 600;
+                                            font-size: 14px;
+                                            color: #333;
+                                            margin-top: 0;
+                                        ">
+                                            👤 Người sửa: <span style="font-size: 16px;">{shipment.get('repairer')}</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                else:
+                                    st.write("**Thông tin chi tiết:**")
                                 
                                 # Hàng 1: Mã yêu cầu | IMEI
                                 col_row1_1, col_row1_2 = st.columns(2)
@@ -2524,20 +2522,7 @@ def show_dashboard():
                                 with col_detail2:
                                     st.markdown("**Thông tin sửa chữa:**")
                                     if shipment.get('repairer'):
-                                        st.markdown(f"""
-                                        <div style="
-                                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                            color: white;
-                                            padding: 12px 16px;
-                                            border-radius: 8px;
-                                            margin: 8px 0;
-                                            font-weight: 600;
-                                            font-size: 16px;
-                                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                                        ">
-                                            👤 Người sửa: <span style="font-size: 18px;">{shipment.get('repairer')}</span>
-                                        </div>
-                                        """, unsafe_allow_html=True)
+                                        st.write(f"• 👤 Người sửa: **{shipment.get('repairer')}**")
                                     if shipment.get('repair_start_date'):
                                         try:
                                             repair_start = pd.to_datetime(shipment.get('repair_start_date')).strftime('%d/%m/%Y %H:%M')
