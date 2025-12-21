@@ -30,42 +30,41 @@ USERS = {
     'cuahang3': 'ch123'
 }
 
-# Loại yêu cầu (Request Types)
+# Loại yêu cầu (Request Types) - Theo sơ đồ hệ thống
 REQUEST_TYPES = [
-    'Bảo hành đổi máy',
-    'Bảo hành sửa chữa',
     'Sửa chữa dịch vụ',
-    'Sửa chữa nhập hàng',
-    'Sửa chữa thu cũ'
+    'Bảo hành sửa chữa',
+    'Bảo hành sửa chữa rơi vỡ',
+    'Bảo hành đổi máy',
+    'Sửa chữa thu cũ',
+    'Sửa chữa PO'
 ]
 
-# Shipment status values - Cập nhật theo yêu cầu mới
+# Shipment status values - Theo sơ đồ hệ thống (8 trạng thái)
 STATUS_VALUES = [
-    'Đã nhận',
-    'Chuyển kho',
-    'Đang kiểm tra',
-    'Gửi NCC sửa',
-    'Đang sửa chữa',
-    'Hoàn thành sửa chữa',
-    'Chuyển cửa hàng',
-    'Chờ trả khách',
-    'Hoàn thành'
+    'Đã nhận',                    # Mặc định khi tạo YCSC
+    'Kiểm tra báo giá',           # KT kho nhận hàng từ SR
+    'Đã báo giá khách',          # KT SR báo giá xong (chỉ hiện nếu loại YCSC = SCDV)
+    'Đang sửa chữa',              # KT kho nhận máy sửa
+    'Hoàn thành sửa chữa',        # KT kho hoàn thành sửa
+    'Kiểm tra sau sửa',           # Admin kiểm tra chất lượng
+    'Chờ trả khách',              # KT kho chuyển máy ra SR
+    'Hoàn thành YCSC'             # Giao khách hoặc xuất HD
 ]
 
 # Trạng thái được coi là "đang hoạt động" (chưa hoàn thành)
 ACTIVE_STATUSES = [
     'Đã nhận',
-    'Chuyển kho',
-    'Đang kiểm tra',
-    'Gửi NCC sửa',
+    'Kiểm tra báo giá',
+    'Đã báo giá khách',
     'Đang sửa chữa',
     'Hoàn thành sửa chữa',
-    'Chuyển cửa hàng',
+    'Kiểm tra sau sửa',
     'Chờ trả khách'
 ]
 
 # Trạng thái hoàn thành
-COMPLETED_STATUSES = ['Hoàn thành']
+COMPLETED_STATUSES = ['Hoàn thành YCSC']
 
 # Default status for new shipments
 DEFAULT_STATUS = 'Đã nhận'
