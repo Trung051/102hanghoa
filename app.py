@@ -1812,23 +1812,17 @@ def show_dashboard():
     if 'dashboard_search_mode' not in st.session_state:
         st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
     
-    # Cửa sổ tìm kiếm đẹp
+    # Cửa sổ tìm kiếm gọn gàng
     with st.container():
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <h3 style="color: white; margin: 0 0 15px 0; font-size: 1.2rem;">🔍 Tìm kiếm phiếu</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col_search1, col_search2, col_search3 = st.columns([2, 1, 1])
+        col_search1, col_search2, col_search3, col_search4 = st.columns([3, 1.5, 1, 1])
         
         with col_search1:
             search_query = st.text_input(
-                "Nhập Mã yêu cầu hoặc IMEI để tìm kiếm",
+                "🔍 Tìm kiếm",
                 value=st.session_state.get('dashboard_search_query', ''),
                 key='dashboard_search_input',
-                placeholder="Ví dụ: YCSC001234 hoặc 353889100187631",
-                help="Tìm kiếm bằng Mã yêu cầu (QR code) hoặc IMEI"
+                placeholder="Nhập Mã yêu cầu hoặc IMEI...",
+                label_visibility="collapsed"
             )
         
         with col_search2:
@@ -1836,22 +1830,23 @@ def show_dashboard():
                 "Tìm theo:",
                 ['Mã yêu cầu', 'IMEI'],
                 index=0 if st.session_state.get('dashboard_search_mode', 'Mã yêu cầu') == 'Mã yêu cầu' else 1,
-                key='dashboard_search_mode_select'
+                key='dashboard_search_mode_select',
+                label_visibility="collapsed"
             )
         
         with col_search3:
             st.write("")  # Spacer
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("🔍 Tìm kiếm", type="primary", use_container_width=True, key='dashboard_search_btn'):
-                    st.session_state['dashboard_search_query'] = search_query.strip()
-                    st.session_state['dashboard_search_mode'] = search_mode
-                    st.rerun()
-            with col_btn2:
-                if st.button("🔄 Xóa", use_container_width=True, key='dashboard_clear_btn'):
-                    st.session_state['dashboard_search_query'] = ''
-                    st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
-                    st.rerun()
+            if st.button("Tìm", use_container_width=True, key='dashboard_search_btn', type="secondary"):
+                st.session_state['dashboard_search_query'] = search_query.strip()
+                st.session_state['dashboard_search_mode'] = search_mode
+                st.rerun()
+        
+        with col_search4:
+            st.write("")  # Spacer
+            if st.button("Xóa", use_container_width=True, key='dashboard_clear_btn', type="secondary"):
+                st.session_state['dashboard_search_query'] = ''
+                st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
+                st.rerun()
     
     # Xử lý tìm kiếm
     search_query = st.session_state.get('dashboard_search_query', '').strip()
@@ -1859,9 +1854,20 @@ def show_dashboard():
     is_searching = bool(search_query)
     
     if is_searching:
-        # Hiển thị kết quả tìm kiếm trong một cửa sổ đẹp
+        # Hiển thị kết quả tìm kiếm trong một page riêng (nổi trên dashboard)
         st.markdown("---")
-        st.markdown(f"### 🔍 Kết quả tìm kiếm: **{search_query}** (Tìm theo {search_mode})")
+        
+        # Header cho kết quả tìm kiếm
+        col_header1, col_header2 = st.columns([3, 1])
+        with col_header1:
+            st.markdown(f"### 🔍 Kết quả tìm kiếm: **{html.escape(search_query)}**")
+            st.caption(f"Tìm theo: {html.escape(search_mode)}")
+        with col_header2:
+            if st.button("← Quay lại", key="back_to_dashboard", type="secondary", use_container_width=True):
+                st.session_state['dashboard_search_query'] = ''
+                st.rerun()
+        
+        st.markdown("---")
         
         df_all = get_all_shipments()
         
@@ -1879,6 +1885,7 @@ def show_dashboard():
                 search_results = search_results.sort_values('sent_time_parsed', ascending=False)
                 
                 st.success(f"✅ Tìm thấy **{len(search_results)}** phiếu")
+                st.markdown("---")
                 
                 # Hiển thị từng phiếu tìm được
                 for idx, row in search_results.iterrows():
@@ -1940,16 +1947,17 @@ def show_dashboard():
                             st.markdown(basic_info_html, unsafe_allow_html=True)
                             
                             # Nút xem chi tiết
-                            if st.button("📋 Xem chi tiết đầy đủ", key=f"view_detail_{shipment_id}", use_container_width=True):
+                            if st.button("📋 Xem chi tiết đầy đủ", key=f"view_detail_search_{shipment_id}", use_container_width=True, type="secondary"):
                                 st.session_state['dashboard_detail_id'] = shipment_id
+                                st.session_state['dashboard_search_query'] = ''  # Clear search khi xem chi tiết
                                 st.rerun()
             else:
-                st.warning(f"⚠️ Không tìm thấy phiếu nào với {search_mode.lower()}: **{search_query}**")
+                st.warning(f"⚠️ Không tìm thấy phiếu nào với {search_mode.lower()}: **{html.escape(search_query)}**")
         else:
             st.info("📭 Chưa có dữ liệu để tìm kiếm")
         
-        st.markdown("---")
-        st.markdown("### 📊 Hoặc xem theo loại yêu cầu:")
+        # Không hiển thị tabs khi đang tìm kiếm
+        return
     
     # Tabs cho các loại yêu cầu
     tab_names = REQUEST_TYPES if REQUEST_TYPES else []
