@@ -426,6 +426,10 @@ def update_shipment(shipment_id, qr_code=None, imei=None, device_name=None, capa
         if repairer is not None:
             updates.append('repairer = ?')
             values.append(repairer)
+        elif repairer == "":
+            # Cho phép xóa repairer nếu truyền empty string
+            updates.append('repairer = ?')
+            values.append(None)
         if repair_start_date is not None:
             updates.append('repair_start_date = ?')
             values.append(repair_start_date)
