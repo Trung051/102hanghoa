@@ -2320,22 +2320,6 @@ def show_dashboard():
                                 
                                 st.divider()
                                 
-                                # Bảng chi tiết sản phẩm
-                                st.markdown("### Chi tiết sản phẩm")
-                                item_table_data = [{
-                                    'Mã hàng': shipment.get('qr_code', ''),
-                                    'Tên hàng': shipment.get('device_name', ''),
-                                    'IMEI': shipment.get('imei', ''),
-                                    'Ghi chú hàng yêu cầu': shipment.get('capacity', ''),
-                                    'Trạng thái sửa chữa': shipment.get('status', ''),
-                                    'Ngày hoàn thành': shipment.get('completed_time', '')[:10] if shipment.get('completed_time') else ''
-                                }]
-                                
-                                item_df = pd.DataFrame(item_table_data)
-                                st.dataframe(item_df, use_container_width=True, hide_index=True)
-                                
-                                st.divider()
-                                
                                 # Hiển thị quá trình cập nhật phiếu (Audit Log) với expander để có thể thu gọn
                                 audit_logs = get_audit_log(limit=1000)  # Lấy tất cả log
                                 
