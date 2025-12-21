@@ -2367,26 +2367,38 @@ def show_dashboard():
                                                 except:
                                                     time_display = str(timestamp)[:19] if timestamp else 'N/A'
                                                 
-                                                # Tạo icon và màu sắc theo action
+                                                # Tạo icon và màu sắc theo action - Hiển thị bằng tiếng Việt và chi tiết
                                                 if action == 'CREATED':
                                                     icon = "🆕"
                                                     color = "#10b981"  # Green
                                                     action_text = "Tạo phiếu"
-                                                    change_text = f"Phiếu được tạo bởi **{changed_by}**"
+                                                    # Hiển thị chi tiết thông tin phiếu được tạo
+                                                    change_text = new_value if new_value else f"Phiếu được tạo bởi **{changed_by}**"
                                                 elif action == 'STATUS_CHANGED':
                                                     icon = "🔄"
                                                     color = "#3b82f6"  # Blue
                                                     action_text = "Thay đổi trạng thái"
-                                                    change_text = f"**{old_value}** → **{new_value}**"
+                                                    # Hiển thị rõ ràng trạng thái cũ và mới
+                                                    if old_value and new_value:
+                                                        change_text = f"Trạng thái: **{old_value}** → **{new_value}**"
+                                                    elif new_value:
+                                                        change_text = f"Trạng thái mới: **{new_value}**"
+                                                    else:
+                                                        change_text = "Trạng thái đã được thay đổi"
                                                 elif action == 'UPDATED':
                                                     icon = "✏️"
                                                     color = "#f59e0b"  # Orange
                                                     action_text = "Cập nhật thông tin"
-                                                    change_text = new_value if new_value else "Thông tin đã được cập nhật"
+                                                    # Hiển thị chi tiết những gì đã cập nhật
+                                                    if new_value:
+                                                        # new_value chứa thông tin chi tiết về các trường đã thay đổi
+                                                        change_text = new_value
+                                                    else:
+                                                        change_text = "Thông tin phiếu đã được cập nhật"
                                                 else:
                                                     icon = "📝"
                                                     color = "#6b7280"  # Gray
-                                                    action_text = action
+                                                    action_text = "Thay đổi"
                                                     change_text = f"{old_value} → {new_value}" if old_value and new_value else (new_value or old_value or "Đã cập nhật")
                                                 
                                                 # Hiển thị log entry với styling
