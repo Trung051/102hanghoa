@@ -40,12 +40,12 @@ def _save_tokens(tokens: dict):
         pass
 
 
-def create_remember_token(username, days_valid=30):
-    """Create and persist a remember token for username"""
+def create_remember_token(username, days_valid=365):
+    """Create and persist a remember token for username (mặc định 1 năm để tự động đăng nhập)"""
     token = str(uuid.uuid4())
     expires_at = (datetime.utcnow() + timedelta(days=days_valid)).isoformat()
     tokens = _load_tokens()
-    tokens[token] = {"username": username, "expires_at": expires_at}
+    tokens[token] = {"username": username, "expires_at": expires_at, "created_at": datetime.utcnow().isoformat()}
     _save_tokens(tokens)
     return token
 
@@ -277,15 +277,17 @@ def get_store_name_from_username(username):
 def require_login():
     """
     Show login form if user is not logged in
+    Tự động đăng nhập nếu có remember token hợp lệ
     Returns True if user is logged in, False otherwise
     """
-    # 1) Auto login if remember_token is valid
+    # 1) Auto login if remember_token is valid (tự động bỏ qua đăng nhập)
     if not is_logged_in():
         params = st.query_params
         token_val = params.get("remember_token")
         token = token_val[0] if isinstance(token_val, list) else token_val
         remembered_user = get_username_from_token(token) if token else None
         if remembered_user:
+            # Tự động đăng nhập với user đã lưu
             st.session_state['username'] = remembered_user
             return True
 
@@ -296,14 +298,19 @@ def require_login():
         with st.form("login_form"):
             username = st.text_input("Tên đăng nhập")
             password = st.text_input("Mật khẩu", type="password")
+            
+            # Checkbox để ghi nhớ đăng nhập (mặc định checked)
+            remember_me = st.checkbox("Ghi nhớ đăng nhập", value=True, help="Tự động đăng nhập lần sau")
+            
             submit = st.form_submit_button("Đăng nhập")
             
             if submit:
                 if login(username, password):
-                    # always remember login (no checkbox)
-                    token = create_remember_token(username)
-                    st.query_params.clear()
-                    st.query_params["remember_token"] = token
+                    # Tự động lưu mật khẩu (tạo remember token) nếu checkbox được chọn
+                    if remember_me:
+                        token = create_remember_token(username, days_valid=365)  # Lưu 1 năm
+                        st.query_params.clear()
+                        st.query_params["remember_token"] = token
                     st.success("Đăng nhập thành công!")
                     st.rerun()
                 else:
