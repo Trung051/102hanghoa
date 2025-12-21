@@ -921,18 +921,6 @@ def show_create_shipment_form(current_user, qr_code):
             if store_name_input.strip():
                 store_name = store_name_input.strip()
         
-        # Get suppliers
-        suppliers_df = get_suppliers()
-        if suppliers_df.empty:
-            st.error("❌ Chưa có nhà cung cấp trong hệ thống")
-            return
-        
-        supplier = st.selectbox(
-            "Nhà cung cấp gửi:",
-            suppliers_df['name'].tolist(),
-            key="supplier_select"
-        )
-        
         # Loại yêu cầu (bắt buộc)
         request_type = st.selectbox(
             "Loại yêu cầu *:",
@@ -998,7 +986,7 @@ def show_create_shipment_form(current_user, qr_code):
                     imei=imei.strip(),
                     device_name=device_name.strip(),
                     capacity=capacity.strip(),
-                    supplier=supplier,
+                    supplier="Chưa chọn",
                     created_by=current_user,
                     notes=notes if notes else None,
                     image_url=image_url,
@@ -1011,8 +999,8 @@ def show_create_shipment_form(current_user, qr_code):
                 if result['success']:
                     st.success(f"✅ Phiếu #{result['id']} đã được lưu thành công!")
                     st.balloons()
-                    # Notify only if default status is already Đã nhận (unlikely); skip otherwise
-                    if supplier and STATUS_VALUES and STATUS_VALUES[0] == 'Đã nhận':
+                    # Notify only if default status is already Đã nhận
+                    if STATUS_VALUES and STATUS_VALUES[0] == 'Đã nhận':
                         notify_shipment_if_received(result['id'], force=True)
                     # Clear scanned data and form data
                     for key in ['scanned_qr_code', 'show_camera', 
@@ -1340,16 +1328,10 @@ def show_manage_shipments():
             imei = st.text_input("IMEI *")
             device_name = st.text_input("Tên thiết bị *")
             capacity = st.text_input("Lỗi / Tình trạng *")
-            suppliers_df = get_suppliers()
-            # Nếu tài khoản cửa hàng: khóa NCC (không chọn)
-            store_user = is_store_user()
-            if store_user:
-                supplier = st.selectbox("Nhà cung cấp (khóa với cửa hàng)", ["(Cửa hàng không chọn NCC)"], index=0, disabled=True)
-            else:
-                supplier = st.selectbox("Nhà cung cấp", suppliers_df['name'].tolist() if not suppliers_df.empty else [])
             uploaded_image_manual = st.file_uploader("Upload ảnh (tùy chọn, chọn nhiều)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="upload_image_manual")
             
             # Trường cửa hàng
+            store_user = is_store_user()
             store_name = None
             if store_user:
                 store_name = get_store_name_from_username(current_user)
@@ -1410,7 +1392,7 @@ def show_manage_shipments():
                     
                     res = save_shipment(
                         qr.strip(), imei.strip(), device_name.strip(), capacity.strip(), 
-                        supplier if not store_user else 'Cửa hàng', current_user, notes if notes else None,
+                        "Chưa chọn", current_user, notes if notes else None,
                         status=default_status, store_name=store_name, image_url=image_url, 
                         request_type=request_type_manual, reception_location=reception_location
                     )
