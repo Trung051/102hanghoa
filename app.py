@@ -1178,7 +1178,10 @@ def show_update_shipment_form(current_user, found_shipment):
         if st.button("Cập Nhật", type="primary", key="update_btn"):
             if new_status != current_status:
                 # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
-                repairer_value = repairer if new_status == "Đang sửa chữa" else None
+                # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
+                repairer_value = None
+                if new_status == "Đang sửa chữa":
+                    repairer_value = repairer if repairer else current_user
                 
                 result = update_shipment(
                     shipment_id=found_shipment['id'],
@@ -2674,7 +2677,10 @@ def show_dashboard():
                                                 final_notes = update_notes.strip()
                                             
                                             # Cập nhật repairer nếu trạng thái là "Đang sửa chữa"
-                                            repairer_to_save = repairer_value if new_status == "Đang sửa chữa" else None
+                                            # Đảm bảo repairer luôn có giá trị (mặc định là current_user nếu không chọn)
+                                            repairer_to_save = None
+                                            if new_status == "Đang sửa chữa":
+                                                repairer_to_save = repairer_value if repairer_value else current_user
                                             
                                             result = update_shipment(
                                                 shipment_id=shipment_id,
