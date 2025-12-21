@@ -1807,6 +1807,149 @@ def show_dashboard():
         st.session_state['dashboard_request_type'] = REQUEST_TYPES[0] if REQUEST_TYPES else ''
     if 'dashboard_detail_id' not in st.session_state:
         st.session_state['dashboard_detail_id'] = None
+    if 'dashboard_search_query' not in st.session_state:
+        st.session_state['dashboard_search_query'] = ''
+    if 'dashboard_search_mode' not in st.session_state:
+        st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
+    
+    # Cửa sổ tìm kiếm đẹp
+    with st.container():
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <h3 style="color: white; margin: 0 0 15px 0; font-size: 1.2rem;">🔍 Tìm kiếm phiếu</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col_search1, col_search2, col_search3 = st.columns([2, 1, 1])
+        
+        with col_search1:
+            search_query = st.text_input(
+                "Nhập Mã yêu cầu hoặc IMEI để tìm kiếm",
+                value=st.session_state.get('dashboard_search_query', ''),
+                key='dashboard_search_input',
+                placeholder="Ví dụ: YCSC001234 hoặc 353889100187631",
+                help="Tìm kiếm bằng Mã yêu cầu (QR code) hoặc IMEI"
+            )
+        
+        with col_search2:
+            search_mode = st.selectbox(
+                "Tìm theo:",
+                ['Mã yêu cầu', 'IMEI'],
+                index=0 if st.session_state.get('dashboard_search_mode', 'Mã yêu cầu') == 'Mã yêu cầu' else 1,
+                key='dashboard_search_mode_select'
+            )
+        
+        with col_search3:
+            st.write("")  # Spacer
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🔍 Tìm kiếm", type="primary", use_container_width=True, key='dashboard_search_btn'):
+                    st.session_state['dashboard_search_query'] = search_query.strip()
+                    st.session_state['dashboard_search_mode'] = search_mode
+                    st.rerun()
+            with col_btn2:
+                if st.button("🔄 Xóa", use_container_width=True, key='dashboard_clear_btn'):
+                    st.session_state['dashboard_search_query'] = ''
+                    st.session_state['dashboard_search_mode'] = 'Mã yêu cầu'
+                    st.rerun()
+    
+    # Xử lý tìm kiếm
+    search_query = st.session_state.get('dashboard_search_query', '').strip()
+    search_mode = st.session_state.get('dashboard_search_mode', 'Mã yêu cầu')
+    is_searching = bool(search_query)
+    
+    if is_searching:
+        # Hiển thị kết quả tìm kiếm trong một cửa sổ đẹp
+        st.markdown("---")
+        st.markdown(f"### 🔍 Kết quả tìm kiếm: **{search_query}** (Tìm theo {search_mode})")
+        
+        df_all = get_all_shipments()
+        
+        if not df_all.empty:
+            if search_mode == 'Mã yêu cầu':
+                # Tìm chính xác theo mã yêu cầu
+                search_results = df_all[df_all['qr_code'].str.contains(search_query, case=False, na=False)].copy()
+            else:  # IMEI
+                # Tìm tất cả phiếu có chứa IMEI này
+                search_results = df_all[df_all['imei'].str.contains(search_query, case=False, na=False)].copy()
+            
+            if not search_results.empty:
+                # Sắp xếp theo thời gian (mới nhất trước)
+                search_results['sent_time_parsed'] = pd.to_datetime(search_results['sent_time'], errors='coerce')
+                search_results = search_results.sort_values('sent_time_parsed', ascending=False)
+                
+                st.success(f"✅ Tìm thấy **{len(search_results)}** phiếu")
+                
+                # Hiển thị từng phiếu tìm được
+                for idx, row in search_results.iterrows():
+                    shipment_id = row['id']
+                    shipment = get_shipment_by_id(shipment_id)
+                    
+                    if shipment:
+                        # Lấy thông tin cơ bản
+                        qr_code = str(shipment.get('qr_code', ''))
+                        imei = str(shipment.get('imei', 'Chưa có'))
+                        status = str(shipment.get('status', ''))
+                        
+                        # Thời gian
+                        time_str = ''
+                        if pd.notna(shipment.get('sent_time')):
+                            try:
+                                time_str = pd.to_datetime(shipment['sent_time']).strftime('%d/%m/%Y %H:%M')
+                            except:
+                                time_str = str(shipment.get('sent_time', ''))[:16]
+                        
+                        # Nơi tiếp nhận
+                        reception_location = shipment.get('reception_location') or shipment.get('store_name') or 'Chưa có'
+                        request_type = shipment.get('request_type', 'Chưa xác định')
+                        
+                        # Tạo label cho expander
+                        expander_label = f"📋 {qr_code} | IMEI: {imei} | {time_str} | {status} | [{request_type}]"
+                        
+                        # Hiển thị phiếu trong expander
+                        with st.expander(expander_label, expanded=False):
+                            # Hiển thị thông tin cơ bản
+                            st.markdown("### Thông tin cơ bản")
+                            
+                            basic_info_html = f"""
+                            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5e7eb;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 16px; align-items: center;">
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Mã yêu cầu</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #111827;">{html.escape(qr_code)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">IMEI</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #059669;">{html.escape(imei)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Thời gian</div>
+                                        <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(time_str)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Nơi tiếp nhận</div>
+                                        <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(reception_location)}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Trạng thái</div>
+                                        <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{html.escape(status)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            """
+                            st.markdown(basic_info_html, unsafe_allow_html=True)
+                            
+                            # Nút xem chi tiết
+                            if st.button("📋 Xem chi tiết đầy đủ", key=f"view_detail_{shipment_id}", use_container_width=True):
+                                st.session_state['dashboard_detail_id'] = shipment_id
+                                st.rerun()
+            else:
+                st.warning(f"⚠️ Không tìm thấy phiếu nào với {search_mode.lower()}: **{search_query}**")
+        else:
+            st.info("📭 Chưa có dữ liệu để tìm kiếm")
+        
+        st.markdown("---")
+        st.markdown("### 📊 Hoặc xem theo loại yêu cầu:")
     
     # Tabs cho các loại yêu cầu
     tab_names = REQUEST_TYPES if REQUEST_TYPES else []
@@ -2083,19 +2226,19 @@ def show_dashboard():
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Mã yêu cầu</div>
                                         <div style="font-size: 1rem; font-weight: 700; color: #111827;">{html.escape(qr_code)}</div>
-                                    </div>
+            </div>
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">IMEI</div>
                                         <div style="font-size: 1rem; font-weight: 700; color: #059669;">{html.escape(imei)}</div>
-                                    </div>
+            </div>
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Thời gian</div>
                                         <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(time_str)}</div>
-                                    </div>
+            </div>
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Nơi tiếp nhận</div>
                                         <div style="font-size: 1rem; font-weight: 600; color: #111827;">{html.escape(reception_location)}</div>
-                                    </div>
+            </div>
                                     <div>
                                         <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 4px;">Trạng thái</div>
                                         <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{html.escape(status)}</div>
