@@ -141,6 +141,18 @@ def init_database():
         )
         ''')
         
+        # Create NotesHistory table for chat-style notes
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS NotesHistory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shipment_id INTEGER NOT NULL,
+            note_text TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (shipment_id) REFERENCES ShipmentDetails(id)
+        )
+        ''')
+        
         # Migration: Add columns if they don't exist
         cursor.execute("PRAGMA table_info(Users)")
         cols = [row[1] for row in cursor.fetchall()]
@@ -1623,6 +1635,67 @@ def auto_update_status_after_1hour():
     except Exception as e:
         conn.rollback()
         return {'success': False, 'updated_count': 0, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def add_note_to_history(shipment_id, note_text, created_by):
+    """
+    Thêm ghi chú vào lịch sử (chat-style)
+    
+    Args:
+        shipment_id: ID của phiếu
+        note_text: Nội dung ghi chú
+        created_by: Tên người tạo ghi chú
+        
+    Returns:
+        dict: {'success': bool, 'error': str or None}
+    """
+    if not note_text or not note_text.strip():
+        return {'success': False, 'error': 'Ghi chú không được để trống'}
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+        INSERT INTO NotesHistory (shipment_id, note_text, created_by)
+        VALUES (?, ?, ?)
+        ''', (shipment_id, note_text.strip(), created_by))
+        
+        conn.commit()
+        return {'success': True, 'error': None}
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
+def get_notes_history(shipment_id):
+    """
+    Lấy lịch sử ghi chú của một phiếu (theo thứ tự thời gian)
+    
+    Args:
+        shipment_id: ID của phiếu
+        
+    Returns:
+        pandas.DataFrame: DataFrame chứa lịch sử ghi chú, sắp xếp theo thời gian (cũ nhất trước)
+    """
+    conn = get_connection()
+    
+    try:
+        query = '''
+        SELECT id, note_text, created_by, created_at
+        FROM NotesHistory
+        WHERE shipment_id = ?
+        ORDER BY created_at ASC
+        '''
+        
+        df = pd.read_sql_query(query, conn, params=(shipment_id,))
+        return df
+    except Exception as e:
+        return pd.DataFrame()
     finally:
         conn.close()
 
